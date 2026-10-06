@@ -160,6 +160,7 @@ export function loadSettings() {
   const settings = {
     rate: 0,
     rateCurrency: 'ARS',
+    monthlyRates: {},
     mult: DEFAULT_MULT,
     hours: DEFAULT_HOURS.slice(),
     holidays: new Set(HOLIDAYS_2026)
@@ -167,6 +168,7 @@ export function loadSettings() {
   if (!raw || typeof raw !== 'object') return settings;
   if (Number.isFinite(raw.rate) && raw.rate >= 0) settings.rate = raw.rate;
   if (VALID_CURRENCIES.has(raw.rateCurrency)) settings.rateCurrency = raw.rateCurrency;
+  settings.monthlyRates = normalizeMonthlyRates(raw.monthlyRates);
   if (Number.isFinite(raw.mult) && raw.mult >= 1 && raw.mult <= 10) settings.mult = raw.mult;
   if (Array.isArray(raw.hours) && raw.hours.length === 7 && raw.hours.every(value => Number.isFinite(value) && value >= 0 && value <= 24)) {
     settings.hours = raw.hours.slice();
@@ -196,6 +198,7 @@ export function saveSettings(settings) {
   return write('settings', {
     rate: settings.rate,
     rateCurrency: VALID_CURRENCIES.has(settings.rateCurrency) ? settings.rateCurrency : 'ARS',
+    monthlyRates: normalizeMonthlyRates(settings.monthlyRates),
     mult: settings.mult,
     hours: settings.hours.slice(),
     holidays: Array.from(settings.holidays).sort()
@@ -204,6 +207,46 @@ export function saveSettings(settings) {
 
 function normalizeCurrency(value) {
   return VALID_CURRENCIES.has(value) ? value : 'ARS';
+}
+
+function normalizeMonthlyRates(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const rates = {};
+  for (const [period, rateData] of Object.entries(value)) {
+    if (!parseMonthKey(period)) continue;
+    const rate = Number(rateData?.rate);
+    if (!Number.isFinite(rate) || rate < 0) continue;
+    rates[period] = { rate, currency: normalizeCurrency(rateData?.currency) };
+  }
+  return rates;
+}
+
+// Las tarifas mensuales preservan el valor con el que se liquidó cada período.
+// Si un mes todavía no tiene una tarifa propia, se conserva la tarifa base de
+// versiones anteriores para no alterar los historiales existentes.
+export function getRateForPeriod(settings, period) {
+  const monthlyRate = settings?.monthlyRates?.[period];
+  if (monthlyRate && Number.isFinite(Number(monthlyRate.rate)) && Number(monthlyRate.rate) >= 0) {
+    return { rate: Number(monthlyRate.rate), currency: normalizeCurrency(monthlyRate.currency), isMonthly: true };
+  }
+  return {
+    rate: Number.isFinite(Number(settings?.rate)) && Number(settings.rate) >= 0 ? Number(settings.rate) : 0,
+    currency: normalizeCurrency(settings?.rateCurrency),
+    isMonthly: false
+  };
+}
+
+export function setRateForPeriod(settings, period, rate, currency) {
+  if (!parseMonthKey(period)) return settings;
+  const numericRate = Number(rate);
+  if (!Number.isFinite(numericRate) || numericRate < 0) return settings;
+  return {
+    ...settings,
+    monthlyRates: {
+      ...normalizeMonthlyRates(settings?.monthlyRates),
+      [period]: { rate: numericRate, currency: normalizeCurrency(currency) }
+    }
+  };
 }
 
 // La cotización se persiste para poder seguir mostrando conversiones cuando la
@@ -460,9 +503,16 @@ export function exportBackup(settings, loadedMonths, sources, trackerPayments, e
   for (const [key, value] of loadedMonths.entries()) months[key] = { days: { ...value.days } };
   return {
     app: 'libreta-de-horas-hub',
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
-    settings: { rate: settings.rate, rateCurrency: normalizeCurrency(settings.rateCurrency), mult: settings.mult, hours: settings.hours, holidays: Array.from(settings.holidays) },
+    settings: {
+      rate: settings.rate,
+      rateCurrency: normalizeCurrency(settings.rateCurrency),
+      monthlyRates: normalizeMonthlyRates(settings.monthlyRates),
+      mult: settings.mult,
+      hours: settings.hours,
+      holidays: Array.from(settings.holidays)
+    },
     months,
     sources,
     trackerPayments,
@@ -504,7 +554,7 @@ export function parseBackup(text) {
 
 export function applyImportedSettings(current, incoming) {
   if (!incoming || typeof incoming !== 'object') return current;
-  const next = { ...current, hours: current.hours.slice(), holidays: new Set(current.holidays) };
+  const next = { ...current, monthlyRates: normalizeMonthlyRates(incoming.monthlyRates), hours: current.hours.slice(), holidays: new Set(current.holidays) };
   if (Number.isFinite(incoming.rate) && incoming.rate >= 0) next.rate = incoming.rate;
   if (VALID_CURRENCIES.has(incoming.rateCurrency)) next.rateCurrency = incoming.rateCurrency;
   if (Number.isFinite(incoming.mult) && incoming.mult >= 1 && incoming.mult <= 10) next.mult = incoming.mult;

@@ -114,7 +114,11 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
   z-index: 5;
   box-shadow: 0 8px 24px rgb(0 0 0 / .06);
   backdrop-filter: blur(16px);
+  transform: translateY(0);
+  will-change: transform, opacity;
+  transition: transform .28s var(--motion-out), opacity .2s ease;
 }
+body.controls-hidden .controlbar { opacity: 0; pointer-events: none; transform: translateY(calc(-100% - 16px)); }
 .filter-control button, .mode-tabs button {
   min-height: 38px;
   padding: 0 12px;
@@ -224,6 +228,8 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
 .badge.project.development { color: var(--holiday); border-color: color-mix(in srgb, var(--holiday) 55%, var(--line)); }
 .badge.project.paused { color: var(--muted); }
 .badge.project.delivered { color: var(--ink); }
+button.status-toggle { appearance: none; cursor: pointer; font: inherit; line-height: inherit; background: transparent; transition: transform .18s var(--motion-out), background .18s ease, box-shadow .18s ease, color .18s ease; }
+button.status-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card-heading { margin-top: 12px; }
 .card-heading h3 { font-size: 19px; line-height: 1.1; overflow-wrap: anywhere; }
 .card-heading p { margin-top: 5px; color: var(--muted); font: 12px var(--font-data); }
@@ -509,6 +515,7 @@ body.drawer-open { overflow: hidden; }
 .field-note { margin: -3px 0 0; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--accent-soft) 66%, transparent); color: var(--muted); font-size: 12px; line-height: 1.35; }
 .rate-inputs { display: flex; align-items: center; gap: 6px; }
 .rate-field select { min-height: 40px; min-width: 66px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; background: var(--bg); color: var(--ink); font: 650 12px var(--font-data); }
+.rate-period-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
 
 #view > .page { animation: page-enter .46s var(--motion-out) both; }
 .animate-in { animation: fade-up .5s var(--motion-out) both; animation-delay: var(--delay, 0ms); }
@@ -538,6 +545,7 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
   .btn:hover, .icon-button:hover, .today-button:hover { filter: none; transform: translateY(-1px); box-shadow: 0 7px 14px rgb(9 30 19 / .1); }
   .btn.primary:hover { box-shadow: 0 9px 19px color-mix(in srgb, var(--accent) 28%, transparent); }
   .exchange-refresh:hover { background: var(--surface); color: var(--accent); transform: rotate(20deg); }
+  button.status-toggle:hover { background: var(--accent-soft); box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 15%, transparent); transform: translateY(-1px); }
 }
 
 @media (min-width: 1024px) {
@@ -620,14 +628,14 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
         <button class="sidebar-nav-item" type="button" data-route="hub" aria-current="page" aria-label="Hub">
           <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></span><span class="sidebar-nav-label">Hub</span>
         </button>
+        <button class="sidebar-nav-item" type="button" data-route="hours" aria-current="false" aria-label="Tracker de horas">
+          <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></span><span class="sidebar-nav-label">Tracker de horas</span>
+        </button>
         <button class="sidebar-nav-item" type="button" data-route="saas" aria-current="false" aria-label="Micro-SaaS y suscripciones">
           <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 8 4-8 4-8-4 8-4Zm-8 8 8 4 8-4M4 15l8 4 8-4"/></svg></span><span class="sidebar-nav-label">Micro-SaaS <em>&amp; suscripciones</em></span>
         </button>
         <button class="sidebar-nav-item" type="button" data-route="projects" aria-current="false" aria-label="Desarrollos puntuales">
           <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 10h18"/></svg></span><span class="sidebar-nav-label">Desarrollos <em>Pago único</em></span>
-        </button>
-        <button class="sidebar-nav-item" type="button" data-route="hours" aria-current="false" aria-label="Tracker de horas">
-          <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></span><span class="sidebar-nav-label">Tracker de horas</span>
         </button>
         <button class="sidebar-nav-item" type="button" data-route="settings" aria-current="false" aria-label="Configuración y ajustes">
           <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.1 2.1-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-3v-.09A1.7 1.7 0 0 0 10.7 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.1-2.1.06-.06A1.7 1.7 0 0 0 7.06 15 1.7 1.7 0 0 0 5.5 14H5v-3h.5a1.7 1.7 0 0 0 1.56-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.1-2.1.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.55V4h3v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.1 2.1-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.56 1h.04v3h-.04A1.7 1.7 0 0 0 19.4 15Z"/></svg></span><span class="sidebar-nav-label">Configuración <em>Ajustes &amp; copias</em></span>
