@@ -155,6 +155,20 @@ export function listStorageKeys() {
   return keys;
 }
 
+export function clearAllData() {
+  try {
+    const keys = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key && key.startsWith(STORAGE_PREFIX)) keys.push(key);
+    }
+    keys.forEach(key => localStorage.removeItem(key));
+    return keys.every(key => localStorage.getItem(key) === null);
+  } catch (_) {
+    return false;
+  }
+}
+
 export function loadSettings() {
   const raw = read('settings');
   const settings = {
@@ -305,7 +319,12 @@ export function createId() {
 function normalizePayment(value) {
   const status = VALID_PAYMENT_STATES.has(value?.status) ? value.status : 'pending';
   const paidAmount = Number(value?.paidAmount);
-  return { status, paidAmount: Number.isFinite(paidAmount) && paidAmount >= 0 ? paidAmount : 0 };
+  const expectedPaymentDate = isValidDate(value?.expectedPaymentDate) ? value.expectedPaymentDate : '';
+  return {
+    status,
+    paidAmount: Number.isFinite(paidAmount) && paidAmount >= 0 ? paidAmount : 0,
+    expectedPaymentDate
+  };
 }
 
 function normalizePayments(value) {

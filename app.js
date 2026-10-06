@@ -8,6 +8,7 @@ import {
   applyImportedSettings,
   calculateHub,
   calculateMonth,
+  clearAllData,
   collectedAmount,
   createId,
   dateOf,
@@ -65,7 +66,6 @@ const EXCHANGE_RATE_MAX_AGE = 6 * 60 * 60 * 1000;
 
 const elements = {
   nav: $('#mainNav'),
-  controlbar: $('.controlbar'),
   sidebar: $('#appSidebar'),
   sidebarScrim: $('#sidebarScrim'),
   menuToggle: $('#menuToggle'),
@@ -123,7 +123,7 @@ const ROUTES = {
   hub: 'Hub',
   saas: 'Micro-SaaS',
   projects: 'Desarrollos',
-  hours: 'Tracker de horas',
+  hours: 'Consultorio',
   settings: 'Ajustes'
 };
 
@@ -134,30 +134,6 @@ const FILTERS = {
 };
 
 const desktopQuery = window.matchMedia('(min-width: 1024px)');
-const CONTROLBAR_REVEAL_TOP = 8;
-let lastScrollY = Math.max(window.scrollY, 0);
-let controlbarScrollTicking = false;
-
-function showControlbar() {
-  document.body.classList.remove('controls-hidden');
-}
-
-function updateControlbarVisibility() {
-  if (controlbarScrollTicking) return;
-  controlbarScrollTicking = true;
-  window.requestAnimationFrame(() => {
-    const currentY = Math.max(window.scrollY, 0);
-    const distance = currentY - lastScrollY;
-    if (currentY <= CONTROLBAR_REVEAL_TOP) {
-      showControlbar();
-      lastScrollY = currentY;
-    } else if (Math.abs(distance) >= 8) {
-      if (distance > 0 && !elements.controlbar.contains(document.activeElement)) document.body.classList.add('controls-hidden');
-      lastScrollY = currentY;
-    }
-    controlbarScrollTicking = false;
-  });
-}
 
 function sidebarIsPinned() {
   return state.sidebar.sidebarPinned && desktopQuery.matches;
@@ -453,6 +429,22 @@ function paymentBadge(payment, source, expected, quickToggle = false) {
   return `<button class="badge payment ${escapeHtml(payment.status)} payment-toggle" type="button" data-action="toggle-source-payment" data-id="${escapeHtml(source.id)}" aria-pressed="${String(isPaid)}" aria-label="${action}: ${sourceName}" title="${action}: ${sourceName}">${escapeHtml(PAYMENT_STATES[payment.status])}</button>`;
 }
 
+function trackerPaymentBadge(payment, expected) {
+  const canToggle = expected > 0 && ['pending', 'paid'].includes(payment.status);
+  if (!canToggle) return paymentBadge(payment);
+
+  const isPaid = payment.status === 'paid';
+  const action = isPaid ? 'Marcar Consultorio como pendiente' : 'Marcar Consultorio como cobrado total';
+  return `<button class="badge payment ${escapeHtml(payment.status)} payment-toggle" type="button" data-action="toggle-tracker-payment" aria-pressed="${String(isPaid)}" aria-label="${action}" title="${action}">${escapeHtml(PAYMENT_STATES[payment.status])}</button>`;
+}
+
+function trackerPaymentTiming(payment) {
+  if (payment.status === 'paid') return 'Cobro registrado';
+  return payment.expectedPaymentDate
+    ? `Cobro estimado: ${formatDate(payment.expectedPaymentDate)}`
+    : 'Sin fecha estimada de cobro';
+}
+
 function projectBadge(status, source, quickToggle = false) {
   const canToggle = quickToggle
     && source
@@ -558,13 +550,13 @@ function renderTrackerWidget({ large = false } = {}) {
   const convertedCollected = arsConversionLabel(collected, currency);
   return `
     <article class="tracker-widget ${large ? 'large' : ''}">
-      <div class="section-kicker">Servicios por hora</div>
+      <div class="section-kicker">Ingreso principal</div>
       <div class="tracker-title-row">
         <div>
-          <h3>Registro de horas</h3>
-          <p>${formatMonth()} · ${tracker.days} ${tracker.days === 1 ? 'día marcado' : 'días marcados'}</p>
+          <h3>Consultorio</h3>
+          <p>${formatMonth()} · ${tracker.days} ${tracker.days === 1 ? 'día de consultorio' : 'días de consultorio'}</p>
         </div>
-        ${paymentBadge(payment)}
+        ${trackerPaymentBadge(payment, tracker.total)}
       </div>
       <div class="tracker-numbers">
         <div><span>Horas reales</span><b>${number.format(tracker.real)} h</b></div>
@@ -572,8 +564,11 @@ function renderTrackerWidget({ large = false } = {}) {
         <div><span>Total · ${currency}</span><span class="currency-value"><b>${formatCurrency(tracker.total, currency)}</b>${currency === 'USD' ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
       </div>
       <div class="tracker-footer">
-        <span>${payment.status === 'partial' || payment.status === 'paid' ? `Cobrado ${formatCurrency(collected, currency)}${convertedCollected ? ` · ${convertedCollected}` : ''}` : 'Pendiente de cobro'}</span>
-        <button class="btn small" type="button" data-action="go-hours">Abrir tracker</button>
+        <div class="tracker-payment-copy">
+          <span>${payment.status === 'partial' || payment.status === 'paid' ? `Cobrado ${formatCurrency(collected, currency)}${convertedCollected ? ` · ${convertedCollected}` : ''}` : 'Pendiente de cobro'}</span>
+          <small>${escapeHtml(trackerPaymentTiming(payment))}</small>
+        </div>
+        <button class="btn small" type="button" data-action="go-hours">Ver consultorio</button>
       </div>
     </article>`;
 }
@@ -696,36 +691,43 @@ function renderHours() {
     : `Este mes empieza en 0. Al cargar una tarifa quedará guardada solo para ${formatMonth().toLowerCase()}.`;
   return `
     <section class="page-heading">
-      <div><p class="eyebrow">Módulo integrado</p><h1>Tracker de horas & servicios</h1><p class="lede">El contador original sigue acá y aporta automáticamente al estimado mensual del Hub.</p></div>
+      <div><p class="eyebrow">Ingreso principal</p><h1>Consultorio · registro de horas</h1><p class="lede">Registrá tus jornadas y llevá el control del cobro mensual sin salir del Hub.</p></div>
       <button type="button" class="btn" data-action="new-source" data-type="hours">+ Servicio por horas</button>
     </section>
     <section class="hours-summary-layout">
       ${renderTrackerWidget({ large: true })}
       <form class="payment-panel" id="trackerPaymentForm">
-        <p class="section-kicker">Estado de cobro</p>
-        <h2>Horas de ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</h2>
-        <label>Estado
+        <p class="section-kicker">Cierre mensual</p>
+        <h2>Consultorio · ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</h2>
+        <div class="payment-quick-actions" role="group" aria-label="Marcar cobro del consultorio">
+          <button class="payment-state-action ${payment.status === 'pending' ? 'is-active pending' : ''}" type="button" data-action="set-tracker-payment-status" data-status="pending" aria-pressed="${String(payment.status === 'pending')}" ${tracker.total > 0 ? '' : 'disabled'}>Pendiente</button>
+          <button class="payment-state-action ${payment.status === 'paid' ? 'is-active paid' : ''}" type="button" data-action="set-tracker-payment-status" data-status="paid" aria-pressed="${String(payment.status === 'paid')}" ${tracker.total > 0 ? '' : 'disabled'}>Cobrado total</button>
+        </div>
+        <label>Estado detallado
           <select name="status">${Object.entries(PAYMENT_STATES).map(([value, label]) => `<option value="${value}" ${payment.status === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
+        </label>
+        <label>Fecha estimada de cobro
+          <input name="expectedPaymentDate" type="date" value="${escapeHtml(payment.expectedPaymentDate)}">
         </label>
         <label>Monto cobrado (${currency})
           <input name="paidAmount" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(payment.paidAmount))}" placeholder="0">
         </label>
-        <p class="note">Total de horas a cobrar: <strong>${formatCurrency(tracker.total, currency)}</strong>${currency === 'USD' ? ` <span class="conversion-note">${escapeHtml(convertedTotal)}</span>` : ''}</p>
-        <button class="btn primary" type="submit">Guardar cobro</button>
+        <p class="note">Total del consultorio: <strong>${formatCurrency(tracker.total, currency)}</strong>${currency === 'USD' ? ` <span class="conversion-note">${escapeHtml(convertedTotal)}</span>` : ''}<br><small>Usá el estado detallado solo si necesitás registrar un cobro parcial.</small></p>
+        <button class="btn primary" type="submit">Guardar detalle</button>
       </form>
     </section>
     <section class="calendar-panel">
       <div class="calendar-toolbar">
-        <div><p class="section-kicker">${formatMonth()}</p><h2>Registro diario</h2></div>
+        <div><p class="section-kicker">${formatMonth()}</p><h2>Jornadas de consultorio</h2></div>
         <label class="rate-field">Valor hora <span class="rate-inputs"><input id="rateInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(rate.rate))}" placeholder="0"><select id="rateCurrency" aria-label="Moneda de la tarifa por hora"><option value="ARS" ${currency === 'ARS' ? 'selected' : ''}>ARS</option><option value="USD" ${currency === 'USD' ? 'selected' : ''}>USD</option></select></span></label>
       </div>
       <p class="rate-period-note">${escapeHtml(rateScopeNote)}</p>
       <div class="mode-tabs" role="group" aria-label="Modo del calendario">
-        <button type="button" data-action="mode" data-mode="work" aria-pressed="${state.mode === 'work'}">Trabajé</button>
+        <button type="button" data-action="mode" data-mode="work" aria-pressed="${state.mode === 'work'}">Fui al consultorio</button>
         <button type="button" data-action="mode" data-mode="holiday" aria-pressed="${state.mode === 'holiday'}">Feriado</button>
         <button type="button" data-action="mode" data-mode="edit" aria-pressed="${state.mode === 'edit'}">Editar horas</button>
       </div>
-      <p class="hint">${state.mode === 'work' ? 'Tocá un día para cargarlo; si no tiene horas por defecto, podés elegirlas.' : state.mode === 'holiday' ? 'Marcá los feriados que deban contar con multiplicador.' : 'Elegí un día para editar sus horas o su feriado.'}</p>
+      <p class="hint">${state.mode === 'work' ? 'Tocá un día para registrar tu jornada; si no tiene horas por defecto, podés elegirlas.' : state.mode === 'holiday' ? 'Marcá los feriados que deban contar con multiplicador.' : 'Elegí un día para editar sus horas o su feriado.'}</p>
       <div class="weekdays" aria-hidden="true"><span>Lu</span><span>Ma</span><span>Mi</span><span>Ju</span><span>Vi</span><span>Sá</span><span>Do</span></div>
       <div class="calendar-grid">${renderCalendar()}</div>
       <div class="calendar-total"><span>${tracker.days} días · ${number.format(tracker.real)} h reales · ${number.format(tracker.payable)} h a pagar</span><span class="currency-value"><strong>${formatCurrency(tracker.total, currency)}</strong>${currency === 'USD' ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
@@ -768,11 +770,20 @@ function renderSettings() {
         <div class="button-row"><button class="btn" type="button" data-action="refresh-exchange-rate" ${state.exchangeLoading ? 'disabled' : ''}>${state.exchangeLoading ? 'Actualizando…' : 'Actualizar cotización'}</button></div>
         <p class="note">${state.sources.length} fuentes de ingreso guardadas en este dispositivo.</p>
       </section>
+      <section class="settings-card danger-zone">
+        <div>
+          <p class="section-kicker">Zona de riesgo</p>
+          <h2>Eliminar toda la información</h2>
+          <p class="note">Borra las horas, fuentes de ingreso, cobros, cotización y preferencias guardadas en este dispositivo. Esta acción no se puede deshacer.</p>
+        </div>
+        <button class="btn danger" type="button" data-action="clear-all-data">Eliminar datos</button>
+      </section>
     </section>`;
 }
 
 function render() {
   ensureMonth();
+  document.body.dataset.route = state.route;
   elements.periodInput.value = state.period;
   elements.periodLabel.textContent = formatMonth();
   elements.status.textContent = state.status;
@@ -1048,10 +1059,41 @@ function updateTrackerPayment(event) {
   event.preventDefault();
   const form = event.target;
   const paidAmount = form.elements.paidAmount.value.trim() ? parseNumber(form.elements.paidAmount.value) : 0;
-  if (!Number.isFinite(paidAmount) || paidAmount < 0) return;
-  state.trackerPayments = { ...state.trackerPayments, [state.period]: { status: form.elements.status.value, paidAmount } };
+  const expectedPaymentDate = form.elements.expectedPaymentDate.value;
+  if (!Number.isFinite(paidAmount) || paidAmount < 0 || (expectedPaymentDate && !isValidDate(expectedPaymentDate))) return;
+  state.trackerPayments = {
+    ...state.trackerPayments,
+    [state.period]: { status: form.elements.status.value, paidAmount, expectedPaymentDate }
+  };
   saveCurrentTrackerPayments();
   render();
+}
+
+function setTrackerPaymentStatus(status) {
+  if (!['pending', 'paid'].includes(status)) return;
+  const tracker = currentTracker();
+  if (!(tracker.total > 0)) {
+    setStatus('Primero cargá horas y una tarifa para registrar el cobro', 'error');
+    return;
+  }
+  const payment = currentTrackerPayment();
+  state.trackerPayments = {
+    ...state.trackerPayments,
+    [state.period]: {
+      ...payment,
+      status,
+      paidAmount: status === 'paid' ? tracker.total : 0
+    }
+  };
+  const saved = saveTrackerPayments(state.trackerPayments);
+  const message = status === 'paid' ? 'Consultorio marcado como cobrado total' : 'Consultorio marcado como pendiente';
+  setStatus(saved ? message : 'No se pudo guardar el cambio', saved ? 'saved' : 'error');
+  render();
+}
+
+function toggleTrackerPayment() {
+  const payment = currentTrackerPayment();
+  setTrackerPaymentStatus(payment.status === 'paid' ? 'pending' : 'paid');
 }
 
 function updateRate(input) {
@@ -1110,6 +1152,31 @@ function downloadBackup() {
   setStatus('Backup descargado', 'saved');
 }
 
+function clearSavedData() {
+  const confirmed = window.confirm('¿Eliminar toda la información de Libreta de Horas? Se borrarán horas, ingresos, cobros, cotización y preferencias guardadas en este dispositivo. Esta acción no se puede deshacer.');
+  if (!confirmed) return;
+  if (!clearAllData()) {
+    setStatus('No se pudieron eliminar todos los datos', 'error');
+    return;
+  }
+  state.period = todayKey();
+  state.filter = 'all';
+  state.settings = loadSettings();
+  state.months = new Map();
+  state.sources = [];
+  state.trackerPayments = {};
+  state.exchangeRate = loadExchangeRate();
+  state.exchangeLoading = false;
+  state.exchangeError = '';
+  state.mode = 'work';
+  state.editingDate = null;
+  state.pendingImport = null;
+  state.sidebar = { open: false, ...loadUiPreferences() };
+  setStatus('Se eliminaron todos los datos guardados', 'saved');
+  applySidebarState();
+  render();
+}
+
 function buildMonthlySummaryReport() {
   const { metrics, lines } = currentHub();
   const tracker = currentTracker();
@@ -1134,7 +1201,7 @@ function buildMonthlySummaryReport() {
       };
     });
   rows.push({
-    name: 'Tracker de horas',
+    name: 'Consultorio',
     type: SOURCE_TYPES.hours,
     projectStatus: '-',
     paymentStatus: PAYMENT_STATES[trackerPayment.status],
@@ -1142,7 +1209,7 @@ function buildMonthlySummaryReport() {
     expected: formatCurrency(tracker.total, trackerCurrency),
     collected: formatCurrency(trackerCollected, trackerCurrency),
     pending: formatCurrency(trackerPending, trackerCurrency),
-    date: `${number.format(tracker.real)} h reales`
+    date: `${number.format(tracker.real)} h reales${trackerPayment.expectedPaymentDate ? ` · cobro estimado ${formatDate(trackerPayment.expectedPaymentDate)}` : ''}`
   });
   const exchangeRate = hasExchangeRate()
     ? `1 USD = ${money.format(state.exchangeRate.rate)}`
@@ -1223,6 +1290,8 @@ function handleAction(action, target) {
     case 'edit-source': openSourceModal(target.dataset.id); break;
     case 'toggle-source-status': toggleSourceStatus(target.dataset.id); break;
     case 'toggle-source-payment': toggleSourcePayment(target.dataset.id); break;
+    case 'toggle-tracker-payment': toggleTrackerPayment(); break;
+    case 'set-tracker-payment-status': setTrackerPaymentStatus(target.dataset.status); break;
     case 'go-route': setRoute(target.dataset.route); break;
     case 'go-hours': setRoute('hours'); break;
     case 'day': onDay(target.dataset.date); break;
@@ -1231,6 +1300,7 @@ function handleAction(action, target) {
     case 'export-monthly-summary': downloadMonthlySummary(); break;
     case 'export-backup': downloadBackup(); break;
     case 'import-backup': chooseImport(); break;
+    case 'clear-all-data': clearSavedData(); break;
     default: break;
   }
 }
@@ -1253,10 +1323,8 @@ elements.nav.addEventListener('click', event => {
   if (button) setRoute(button.dataset.route);
 });
 
-elements.addSource.addEventListener('click', () => openSourceModal());
+elements.addSource?.addEventListener('click', () => openSourceModal());
 elements.refreshExchangeRate.addEventListener('click', () => refreshExchangeRate());
-elements.controlbar.addEventListener('focusin', showControlbar);
-window.addEventListener('scroll', updateControlbarVisibility, { passive: true });
 elements.periodInput.addEventListener('change', event => changePeriod(event.target.value));
 $('#prevPeriod').addEventListener('click', () => changePeriod(shiftMonth(state.period, -1)));
 $('#nextPeriod').addEventListener('click', () => changePeriod(shiftMonth(state.period, 1)));
@@ -1324,7 +1392,6 @@ elements.cancelImport.addEventListener('click', () => {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    lastScrollY = Math.max(window.scrollY, 0);
     if (!state.editingDate) render();
   }
 });

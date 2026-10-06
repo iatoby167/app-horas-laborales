@@ -38,7 +38,7 @@
   --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
   --font-body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data: 'DM Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --topbar-sticky-height: 68px;
+  --period-dock-height: 54px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -82,29 +82,36 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
 .app-shell {
   width: min(100%, 88rem);
   margin: 0 auto;
-  padding: max(18px, env(safe-area-inset-top, 0px)) clamp(16px, 3vw, 40px) calc(48px + env(safe-area-inset-bottom, 0px));
+  padding: max(12px, env(safe-area-inset-top, 0px)) clamp(16px, 3vw, 40px) calc(48px + env(safe-area-inset-bottom, 0px));
 }
-.app-topbar {
+.persistent-navigation {
   position: sticky;
   top: 0;
-  z-index: 8;
+  z-index: 12;
+  padding-bottom: 8px;
+  background: color-mix(in srgb, var(--bg) 95%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  box-shadow: 0 12px 28px rgb(3 18 10 / .12);
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+.app-topbar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 0 18px;
-  background: color-mix(in srgb, var(--bg) 94%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  padding: 0 0 8px;
 }
 .brand-block { min-width: 0; }
 .brand { display: block; font: 700 12px var(--font-display); letter-spacing: .15em; text-transform: uppercase; color: var(--muted); }
 .brand-subtitle { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
-.top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
-.top-actions .btn { white-space: nowrap; }
 .status { font: 400 12px var(--font-data); color: var(--muted); white-space: nowrap; }
 .status[data-state="error"] { color: var(--danger); }
 .status[data-state="saved"] { color: var(--accent); }
+.visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+body[data-route="settings"] .controlbar { display: none; }
 
 .controlbar {
   display: grid;
@@ -116,17 +123,10 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
   border-radius: 18px;
   background: var(--surface);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
-  position: sticky;
-  top: calc(var(--topbar-sticky-height) + env(safe-area-inset-top, 0px));
-  z-index: 5;
-  box-shadow: 0 8px 24px rgb(0 0 0 / .06);
+  position: relative;
+  box-shadow: 0 10px 26px rgb(0 0 0 / .1);
   backdrop-filter: blur(16px);
-  transform: translateY(0);
-  transform-origin: top center;
-  will-change: transform, opacity, filter;
-  transition: transform .46s cubic-bezier(.22, 1, .36, 1), opacity .34s ease-out, filter .34s ease-out;
 }
-body.controls-hidden .controlbar { opacity: 0; pointer-events: none; filter: blur(1.5px); transform: translateY(calc(-100% - 18px)) scale(.985); }
 .filter-control button, .mode-tabs button {
   min-height: 38px;
   padding: 0 12px;
@@ -141,7 +141,83 @@ body.controls-hidden .controlbar { opacity: 0; pointer-events: none; filter: blu
   background: var(--surface-2);
   color: var(--ink);
 }
-.period-control { display: flex; align-items: center; gap: 4px; }
+.period-dock {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  min-height: var(--period-dock-height);
+  margin: 0;
+}
+.period-control.liquid-glass {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+  border-radius: 16px;
+  background:
+    linear-gradient(132deg, color-mix(in srgb, var(--surface) 55%, transparent), color-mix(in srgb, var(--surface-2) 34%, transparent)),
+    color-mix(in srgb, var(--bg) 24%, transparent);
+  box-shadow:
+    0 13px 34px rgb(3 18 10 / .24),
+    inset 0 1px 0 rgb(255 255 255 / .2),
+    inset 0 -1px 0 rgb(0 0 0 / .14);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  transition: border-color .24s ease, box-shadow .24s ease, transform .24s var(--motion-out);
+}
+.period-control.liquid-glass::before,
+.period-control.liquid-glass::after {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  content: '';
+}
+.period-control.liquid-glass::before {
+  inset: 0;
+  background:
+    radial-gradient(90% 125% at 6% -35%, rgb(255 255 255 / .34), transparent 53%),
+    radial-gradient(58% 100% at 100% 130%, color-mix(in srgb, var(--accent) 36%, transparent), transparent 64%);
+  opacity: .82;
+}
+.period-control.liquid-glass::after {
+  top: -80%;
+  left: -28%;
+  width: 58%;
+  height: 265%;
+  border-radius: 50%;
+  background: linear-gradient(90deg, transparent 15%, rgb(255 255 255 / .18) 49%, transparent 82%);
+  filter: blur(9px);
+  opacity: .7;
+  transform: rotate(-19deg);
+  animation: liquid-glass-drift 11s ease-in-out infinite;
+}
+.period-control.liquid-glass > * { position: relative; z-index: 1; }
+.period-control.liquid-glass .icon-button,
+.period-control.liquid-glass .today-button,
+.period-control.liquid-glass .month-picker {
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 14%, transparent);
+  background: color-mix(in srgb, var(--surface) 38%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .12), inset 0 -1px 0 rgb(0 0 0 / .08);
+  backdrop-filter: blur(11px);
+  -webkit-backdrop-filter: blur(11px);
+}
+.period-control.liquid-glass .period-name {
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgb(255 255 255 / .1);
+}
+.period-control.liquid-glass:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--line));
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--accent) 18%, transparent), inset 0 1px 0 rgb(255 255 255 / .23), inset 0 -1px 0 rgb(0 0 0 / .12);
+}
 .period-control .icon-button { width: 38px; height: 38px; }
 .today-button { min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 700; }
 .period-name { min-width: 136px; text-align: center; font: 700 14px var(--font-display); }
@@ -213,6 +289,8 @@ body.controls-hidden .controlbar { opacity: 0; pointer-events: none; filter: blu
 .tracker-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
 .tracker-numbers b { display: block; margin-top: 3px; font: 500 17px var(--font-data); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
 .tracker-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px; color: var(--muted); font-size: 13px; }
+.tracker-payment-copy { min-width: 0; display: grid; gap: 3px; }
+.tracker-payment-copy small { color: var(--muted); font-size: 11px; }
 
 .module-section { margin-top: 34px; }
 .module-section.two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
@@ -267,6 +345,13 @@ button.status-toggle:focus-visible, button.payment-toggle:focus-visible { outlin
   width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); color: var(--ink);
 }
 .payment-panel .note { margin: 13px 0; color: var(--muted); font-size: 13px; }
+.payment-panel .note small { display: inline-block; margin-top: 4px; font-size: 11px; line-height: 1.35; }
+.payment-quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 0 0 14px; padding: 4px; border-radius: 13px; background: var(--surface-2); }
+.payment-state-action { min-height: 39px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 750; transition: transform .18s var(--motion-out), background .18s ease, box-shadow .18s ease, color .18s ease, border-color .18s ease; }
+.payment-state-action.is-active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(9 30 19 / .12); }
+.payment-state-action.is-active.paid { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+.payment-state-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.payment-state-action:disabled { cursor: not-allowed; opacity: .48; }
 .calendar-panel { margin-top: 14px; padding: 20px; }
 .calendar-toolbar { align-items: center; }
 .calendar-toolbar h2 { margin-top: 2px; font-size: 23px; }
@@ -299,6 +384,10 @@ button.status-toggle:focus-visible, button.payment-toggle:focus-visible { outlin
 .wide-label { margin-top: 15px; }
 .settings-card .note { margin-top: 14px; color: var(--muted); font-size: 13px; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.danger-zone { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
+.danger-zone h2 { color: var(--danger); }
+.danger-zone .note { max-width: 640px; }
+.danger-zone .btn.danger { flex: none; border-color: color-mix(in srgb, var(--danger) 52%, var(--line)); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
 
 dialog { width: min(calc(100% - 24px), 680px); max-height: min(92vh, 760px); padding: 0; border: 1px solid var(--line); border-radius: 20px; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px rgb(0 0 0 / .35); }
 dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
@@ -326,12 +415,10 @@ dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
 }
 
 @media (max-width: 760px) {
-  :root { --topbar-sticky-height: 86px; }
+  :root { --period-dock-height: 54px; }
   .app-shell { padding-inline: 14px; }
   .app-topbar { align-items: flex-start; }
-  .top-actions { flex-direction: column-reverse; align-items: flex-end; gap: 6px; }
   .controlbar { display: flex; flex-wrap: wrap; gap: 8px; }
-  .period-control { order: 2; }
   .filter-control { order: 3; margin-left: auto; }
   .dashboard-hero, .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
   .dashboard-hero h1, .page-heading h1 { font-size: clamp(28px, 9vw, 40px); }
@@ -343,6 +430,7 @@ dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
   .module-section.two-columns { gap: 26px; }
   .tracker-widget.large { min-height: 0; }
   .settings-layout { grid-template-columns: 1fr; }
+  .danger-zone { align-items: flex-start; flex-direction: column; gap: 14px; }
 }
 
 @media (max-width: 480px) {
@@ -517,7 +605,7 @@ body.drawer-open { overflow: hidden; }
 .exchange-refresh { display: grid; place-items: center; flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--muted); transition: transform .2s var(--motion-out), background .2s ease, color .2s ease; }
 .exchange-refresh svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .exchange-control[data-state="loading"] .exchange-refresh svg { animation: exchange-spin 1s linear infinite; }
-.controlbar { grid-template-columns: minmax(136px, 1fr) auto auto auto; }
+.controlbar { grid-template-columns: minmax(136px, 1fr) auto auto; }
 
 .card-amount-wrap { display: grid; justify-items: end; gap: 4px; text-align: right; }
 .card-amount-secondary, .conversion-note { color: var(--muted); font: 500 11px var(--font-data); letter-spacing: -.035em; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -554,8 +642,13 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
   .kpi-card:hover, .collection-card:hover, .tracker-widget:hover, .payment-panel:hover, .calendar-panel:hover, .settings-card:hover { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); transform: translateY(-2px); box-shadow: 0 13px 28px rgb(9 30 19 / .09); }
   .income-card:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); transform: translateY(-3px); box-shadow: 0 14px 28px rgb(9 30 19 / .1); }
   .btn:hover, .icon-button:hover, .today-button:hover { filter: none; transform: translateY(-1px); box-shadow: 0 7px 14px rgb(9 30 19 / .1); }
+  .payment-state-action:hover:not(:disabled) { background: var(--surface); color: var(--ink); transform: translateY(-1px); }
   .btn.primary:hover { box-shadow: 0 9px 19px color-mix(in srgb, var(--accent) 28%, transparent); }
   .exchange-refresh:hover { background: var(--surface); color: var(--accent); transform: rotate(20deg); }
+  .period-control.liquid-glass:hover { border-color: color-mix(in srgb, var(--ink) 38%, transparent); box-shadow: 0 16px 40px rgb(3 18 10 / .28), inset 0 1px 0 rgb(255 255 255 / .24), inset 0 -1px 0 rgb(0 0 0 / .12); transform: translateY(-1px); }
+  .period-control.liquid-glass .icon-button:hover,
+  .period-control.liquid-glass .today-button:hover,
+  .period-control.liquid-glass .month-picker:hover { border-color: color-mix(in srgb, var(--accent) 46%, var(--line)); background: color-mix(in srgb, var(--accent-soft) 54%, transparent); box-shadow: inset 0 1px 0 rgb(255 255 255 / .18), 0 5px 12px color-mix(in srgb, var(--accent) 16%, transparent); }
   button.status-toggle:hover, button.payment-toggle:hover { background: var(--accent-soft); box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 15%, transparent); transform: translateY(-1px); }
 }
 
@@ -598,7 +691,7 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
   .app-sidebar { top: 10px; bottom: 10px; left: 10px; width: min(278px, calc(100vw - 20px)); border-radius: 21px; }
   .controlbar { display: grid; grid-template-columns: 1fr; gap: 9px; }
   .exchange-control { grid-column: auto; width: 100%; }
-  .period-control { justify-self: center; }
+  .period-dock { margin-bottom: 0; }
   .filter-control { grid-column: auto; width: 100%; justify-content: space-between; }
   .filter-control button { flex: 1; }
 }
@@ -609,9 +702,14 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
 @keyframes modal-content-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes exchange-spin { to { transform: rotate(360deg); } }
+@keyframes liquid-glass-drift {
+  0%, 100% { transform: translate3d(-6%, -1%, 0) rotate(-19deg); }
+  50% { transform: translate3d(27%, 3%, 0) rotate(-19deg); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .app-shell, .app-sidebar, .sidebar-scrim, #view > .page, .animate-in, dialog[open], .dialog-content { animation: none !important; transition: none !important; }
+  .period-control.liquid-glass::after { animation: none; }
 }
 </style>
 </head>
@@ -660,7 +758,8 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
     <button id="sidebarScrim" class="sidebar-scrim" type="button" aria-label="Cerrar menú lateral" tabindex="-1"></button>
 
     <div class="app-shell">
-      <header class="app-topbar">
+      <div class="persistent-navigation">
+        <header class="app-topbar">
         <div class="topbar-identity">
           <button id="menuToggle" class="menu-toggle" type="button" aria-label="Abrir menú" aria-controls="appSidebar" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
@@ -670,11 +769,19 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
             <span class="brand-subtitle">Hub central de ingresos</span>
           </div>
         </div>
-        <div class="top-actions">
-          <span class="status" id="status" role="status" data-state="idle">Se guarda en este dispositivo</span>
-          <button id="addSource" class="btn primary" type="button">+ Nueva fuente</button>
-        </div>
-      </header>
+        <span class="status visually-hidden" id="status" role="status" data-state="idle">Se guarda en este dispositivo</span>
+        </header>
+
+        <nav class="period-dock" aria-label="Navegación entre meses">
+          <div class="period-control liquid-glass" aria-label="Período">
+            <button id="prevPeriod" class="icon-button" type="button" aria-label="Mes anterior">‹</button>
+            <span id="periodLabel" class="period-name"></span>
+            <label class="month-picker" aria-label="Elegir mes"><input id="periodInput" type="month"></label>
+            <button id="todayPeriod" class="today-button" type="button">Hoy</button>
+            <button id="nextPeriod" class="icon-button" type="button" aria-label="Mes siguiente">›</button>
+          </div>
+        </nav>
+      </div>
 
       <section class="controlbar" aria-label="Período y filtros">
         <div class="view-context" aria-live="polite"><span>Vista actual</span><strong id="activeSectionLabel">Hub</strong></div>
@@ -685,13 +792,6 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-4L3 10m0-5v5h5M4 13a8 8 0 0 0 14.9 4L21 14m0 5v-5h-5"/></svg>
           </button>
         </div>
-      <div class="period-control" aria-label="Período">
-        <button id="prevPeriod" class="icon-button" type="button" aria-label="Mes anterior">‹</button>
-        <span id="periodLabel" class="period-name"></span>
-        <label class="month-picker" aria-label="Elegir mes"><input id="periodInput" type="month"></label>
-        <button id="todayPeriod" class="today-button" type="button">Hoy</button>
-        <button id="nextPeriod" class="icon-button" type="button" aria-label="Mes siguiente">›</button>
-      </div>
       <div id="filterControl" class="filter-control" role="group" aria-label="Filtrar cobros">
         <button type="button" data-filter="all" aria-pressed="true">Todo</button>
         <button type="button" data-filter="pending" aria-pressed="false">Pendientes</button>
