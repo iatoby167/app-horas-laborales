@@ -1,55 +1,52 @@
-# Libreta de Horas
+# Hub de Ingresos
 
-App para marcar los días que trabajaste y calcular las horas y lo que vas a cobrar en el mes. Los feriados trabajados cuentan doble. Funciona sin internet y se instala en el celular como una app.
+Panel personal y local para visualizar ingresos recurrentes, desarrollos puntuales, servicios por hora, pagos fijos y el estado de cobro de cada uno.
 
-## Qué hay en la carpeta
+La app funciona como PWA: se puede instalar en el celular y queda disponible sin conexión después de la primera carga.
 
-- `index.html`: la app completa.
-- `manifest.webmanifest` y los `.png`: nombre e ícono para instalarla.
-- `sw.js`: lo que la deja funcionando sin internet.
+## Qué incluye
 
-No cambies los nombres ni muevas los archivos a subcarpetas.
-
-## Cómo publicarla gratis (GitHub Pages)
-
-Para instalarla en el celular tiene que estar en una dirección web con https. Estos pasos se hacen desde el navegador:
-
-1. Creá una cuenta gratis en github.com.
-2. Tocá **New repository**, poné un nombre (por ejemplo `horas`), dejalo en **Public** y tocá **Create repository**.
-3. Elegí **uploading an existing file**, subí todos los archivos de esta carpeta y tocá **Commit changes**.
-4. Andá a **Settings → Pages**. En **Source** elegí **Deploy from a branch**, en **Branch** elegí `main` y la carpeta `/ (root)`, y tocá **Save**.
-5. A los uno o dos minutos aparece la dirección, con la forma `https://TUUSUARIO.github.io/horas/`.
-
-El repositorio público solo tiene el código. Tus días y tu valor por hora quedan guardados en el teléfono, nunca en GitHub.
-
-Alternativa: en app.netlify.com/drop podés arrastrar la carpeta. Creá una cuenta para que el sitio no se borre.
-
-## Instalarla en el celular
-
-- **Android (Chrome):** abrí la dirección y tocá **Instalar** en el aviso de arriba. Si no aparece, usá el menú ⋮ y elegí **Instalar app** o **Agregar a la pantalla principal**.
-- **iPhone (Safari):** abrí la dirección, tocá **Compartir** y elegí **Agregar a inicio**. Tiene que ser Safari.
-
-La primera vez abrila con internet. Después anda sin conexión. Las fuentes se bajan de Google Fonts en esa primera vez; si nunca se bajaron, se ve con la letra del sistema.
+- **Hub principal:** MRR, desarrollos del mes, total estimado, cobrado vs. pendiente y proyectos activos.
+- **Micro-SaaS y suscripciones:** MRR, clientes, ciclo de cobro y estado mensual de pago.
+- **Desarrollos puntuales:** presupuesto, fecha estimada, estado del proyecto y cobro parcial o total.
+- **Tracker de horas integrado:** conserva el calendario de horas y suma automáticamente su total al Hub.
+- **Ingresos fijos o extras:** cargos recurrentes o pagos únicos.
+- **Histórico mensual:** elegí el período con las flechas o el selector de mes.
+- **Backup:** descarga e importa los datos completos del Hub y del tracker.
 
 ## Tus datos
 
-Se guardan en el dispositivo donde usás la app, por eso no se ven en otro teléfono ni en la compu. Descargá un backup de vez en cuando desde **Copia de seguridad**, sobre todo antes de borrar los datos del navegador o de cambiar de teléfono. Para pasarlos a otro dispositivo, descargá el backup en uno e importalo en el otro.
+Todo se guarda localmente en el dispositivo y no se envía a ningún servidor. Los registros de horas de la versión anterior se conservan automáticamente al abrir esta versión.
 
-Si ya venías usando la versión de Claude, descargá el backup desde ahí e importalo en esta.
+Hacé una copia de seguridad antes de borrar los datos del navegador o cambiar de teléfono. Los backups nuevos incluyen fuentes de ingreso y estados de cobro, y la importación sigue aceptando backups anteriores del contador de horas.
 
-## Probarla en tu compu
+## Estructura
 
-```
-cd carpeta-de-la-app
-python3 -m http.server 8000
-```
+- `index.html`: interfaz, estilos y estructura accesible.
+- `app.js`: navegación, componentes visuales, formularios y eventos.
+- `data.js`: modelo financiero, cálculos, validación y almacenamiento local.
+- `sw.js`: caché para instalación y funcionamiento sin conexión.
+- `manifest.webmanifest` e íconos: datos de la PWA instalada.
 
-Abrí `http://localhost:8000`. Abrir `index.html` con doble clic funciona para ver la app, pero no se puede instalar.
+## Probar localmente
+
+En Windows, desde esta carpeta:
+
+    python -m http.server 8000
+
+Abrí `http://localhost:8000`. En otros sistemas, puede ser necesario usar `python3` en lugar de `python`.
+
+## Publicarla con GitHub Pages
+
+1. Creá un repositorio público en GitHub.
+2. Subí todos los archivos de esta carpeta sin cambiar sus nombres.
+3. En **Settings → Pages**, elegí **Deploy from a branch**, rama `main` y carpeta `/(root)`.
+4. Abrí la dirección HTTPS que te entregue GitHub e instalá la app desde el navegador.
 
 ## Actualizar la app
 
-Reemplazá los archivos en el repositorio. Si cambiás algo que no sea `index.html`, subí el número de `VERSION` en `sw.js` para que los dispositivos tomen la versión nueva.
+Cuando cambies `index.html`, `app.js`, `data.js`, íconos o el manifiesto, subí el número de `VERSION` en `sw.js`. Eso permite que los dispositivos reciban la nueva caché.
 
 ## Feriados
 
-Vienen cargados los feriados nacionales de 2026, sin los puentes turísticos. Verificalos contra la fuente oficial. Para otros años, o para sumar un puente, usá el modo **Feriado** del calendario.
+La app incluye feriados nacionales de Argentina para 2026, sin puentes turísticos. Para otros años, cargalos desde el modo **Feriado** del tracker y verificá las fechas antes de liquidar.

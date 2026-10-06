@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Libreta de Horas</title>
-<meta name="description" content="Calendario para marcar los días trabajados y ver las horas y el cobro del mes, con feriados al doble.">
+<title>Libreta de Horas · Hub financiero</title>
+<meta name="description" content="Hub personal de ingresos, proyectos, Micro-SaaS, cobros y horas trabajadas.">
 <meta name="theme-color" content="#E9EEEA" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1411" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
@@ -13,812 +13,504 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Horas">
+<meta name="apple-mobile-web-app-title" content="Hub ingresos">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=DM+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: una sola columna angosta, pensada para el celular. Resumen arriba, calendario en el medio, detalle y ajustes abajo, como una planilla de horas. */
 :root {
   color-scheme: light;
-  --bg: #E9EEEA;
-  --surface: #F6F8F5;
-  --surface-2: #DDE5E0;
-  --ink: #14201A;
+  --bg: #e9eeea;
+  --surface: #f6f8f5;
+  --surface-2: #dde5e0;
+  --surface-3: #eff3ef;
+  --ink: #14201a;
   --muted: #506157;
-  --line: #C4CFC8;
-  --accent: #0F6B50;
-  --on-accent: #FFFFFF;
-  --holiday: #B4531A;
-  --on-holiday: #FFFFFF;
-  --holiday-soft: #F3E0D2;
-  --danger: #A62A2A;
-  --focus: #0F6B50;
+  --line: #c4cfc8;
+  --accent: #0f6b50;
+  --accent-soft: #d7eee5;
+  --on-accent: #fff;
+  --holiday: #b4531a;
+  --holiday-soft: #f3e0d2;
+  --danger: #a62a2a;
+  --focus: #0f6b50;
   --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
   --font-body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data: 'DM Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
+
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #0E1411;
-    --surface: #161F1A;
-    --surface-2: #1E2923;
-    --ink: #E5EEE8;
-    --muted: #93A59A;
-    --line: #2B3932;
-    --accent: #3CC79A;
-    --on-accent: #05231A;
-    --holiday: #F0A24E;
-    --on-holiday: #2B1703;
-    --holiday-soft: #35240F;
-    --danger: #FF8F85;
-    --focus: #3CC79A;
+    --bg: #0e1411;
+    --surface: #161f1a;
+    --surface-2: #1e2923;
+    --surface-3: #19241e;
+    --ink: #e5eee8;
+    --muted: #93a59a;
+    --line: #2b3932;
+    --accent: #3cc79a;
+    --accent-soft: #173d2f;
+    --on-accent: #05231a;
+    --holiday: #f0a24e;
+    --holiday-soft: #35240f;
+    --danger: #ff8f85;
+    --focus: #3cc79a;
   }
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
   font: 400 15px/1.45 var(--font-body);
   -webkit-tap-highlight-color: transparent;
-  padding-block: calc(14px + env(safe-area-inset-top, 0px)) calc(56px + env(safe-area-inset-bottom, 0px));
-  padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
 }
-.app { max-width: 30rem; margin-inline: auto; display: flex; flex-direction: column; gap: 16px; }
-h1, h2 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
-button, input, textarea { font: inherit; color: inherit; touch-action: manipulation; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, select { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .55; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+a { color: var(--accent); }
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
 
-.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.brand { font: 700 12px var(--font-display); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
-.status { font: 400 12px var(--font-data); color: var(--muted); text-align: right; }
+.app-shell {
+  width: min(100%, 88rem);
+  margin: 0 auto;
+  padding: max(18px, env(safe-area-inset-top, 0px)) clamp(16px, 3vw, 40px) calc(48px + env(safe-area-inset-bottom, 0px));
+}
+.app-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 18px;
+}
+.brand-block { min-width: 0; }
+.brand { display: block; font: 700 12px var(--font-display); letter-spacing: .15em; text-transform: uppercase; color: var(--muted); }
+.brand-subtitle { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
+.top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.top-actions .btn { white-space: nowrap; }
+.status { font: 400 12px var(--font-data); color: var(--muted); white-space: nowrap; }
 .status[data-state="error"] { color: var(--danger); }
+.status[data-state="saved"] { color: var(--accent); }
 
-.install { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 16px; font-size: 14px; }
-.install span { min-width: 0; }
-.install .row-actions { flex: none; flex-wrap: nowrap; }
-.install .btn { min-height: 40px; padding: 0 14px; }
-
-.monthbar { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 8px; }
-.monthmid { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; }
-.monthmid h1 { font-weight: 700; font-size: 26px; line-height: 1.1; text-align: center; letter-spacing: -.01em; }
-.iconbtn {
-  width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; padding: 0;
+.controlbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  position: sticky;
+  top: max(8px, env(safe-area-inset-top, 0px));
+  z-index: 5;
+  box-shadow: 0 8px 24px rgb(0 0 0 / .06);
+  backdrop-filter: blur(16px);
 }
-.iconbtn:active { background: var(--surface-2); }
-.linkbtn { border: 0; background: none; color: var(--accent); font: 600 13px var(--font-body); cursor: pointer; padding: 4px 8px; min-height: 28px; }
-
-.sum {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-  padding: 16px; display: flex; flex-direction: column; gap: 14px;
+.main-nav { display: flex; gap: 3px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.main-nav::-webkit-scrollbar { display: none; }
+.main-nav button, .filter-control button, .mode-tabs button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 650;
+  white-space: nowrap;
 }
-.eyebrow { font: 600 10.5px var(--font-body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.total { font: 700 clamp(2.4rem, 12vw, 3.2rem)/1.05 var(--font-display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 4px; }
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.stat b { font: 500 17px/1.2 var(--font-data); font-variant-numeric: tabular-nums; min-height: 36px; display: flex; align-items: center; }
-.rate {
-  width: 100%; min-width: 0; min-height: 36px; padding: 4px 8px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--bg); font: 500 16px var(--font-data);
+.main-nav button[aria-current="page"], .filter-control button[aria-pressed="true"], .mode-tabs button[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
 }
-.hint { margin: 0; color: var(--muted); font-size: 13.5px; }
-.note { margin: 0; color: var(--muted); font-size: 12.5px; }
+.period-control { display: flex; align-items: center; gap: 4px; }
+.period-control .icon-button { width: 38px; height: 38px; }
+.today-button { min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 700; }
+.period-name { min-width: 136px; text-align: center; font: 700 14px var(--font-display); }
+.month-picker { position: relative; width: 28px; height: 38px; overflow: hidden; border-radius: 9px; background: var(--surface-2); }
+.month-picker::after { content: '⌄'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+.month-picker input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.filter-control { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
+.filter-control button { min-height: 32px; padding-inline: 9px; font-size: 12px; }
+.filter-control button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
 
-.modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 14px; }
-.mode { min-height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: 600 14px var(--font-body); cursor: pointer; }
-.mode[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .16); }
-.mode[data-mode="work"][aria-pressed="true"] { color: var(--accent); }
-.mode[data-mode="holiday"][aria-pressed="true"] { color: var(--holiday); }
-
-.cal { display: flex; flex-direction: column; gap: 8px; }
-.dow, .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
-.dow span { font: 600 10.5px var(--font-body); letter-spacing: .06em; text-transform: uppercase; text-align: center; color: var(--muted); }
-.day {
-  position: relative; overflow: hidden; aspect-ratio: 1 / 1.08; min-height: 48px;
-  border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
-  padding: 5px 6px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start;
-  text-align: left; cursor: pointer; user-select: none; -webkit-user-select: none;
+.btn, .icon-button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 650;
+  padding: 0 15px;
 }
-.day .n { font: 600 15px/1 var(--font-body); }
-.day .h { font: 500 10px/1 var(--font-data); letter-spacing: -.04em; white-space: nowrap; min-height: 10px; }
-.day.we { background: var(--surface-2); }
-.day.hol { background: var(--holiday-soft); border-color: var(--holiday); }
-.day.hol::after { content: ""; position: absolute; top: 0; right: 0; width: 15px; height: 15px; background: var(--holiday); clip-path: polygon(0 0, 100% 0, 100% 100%); }
-.day.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.day.on.hol { background: var(--holiday); border-color: var(--holiday); color: var(--on-holiday); }
-.day.on.hol::after { background: var(--on-holiday); }
-.day.today { box-shadow: inset 0 0 0 2px var(--ink); }
-.day.blank { visibility: hidden; pointer-events: none; border: 0; }
-
-.editor { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.editor h2 { font-size: 18px; font-weight: 700; }
-.editor form { display: flex; flex-direction: column; gap: 12px; }
-.stepper { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 8px; }
-.hoursinput { min-width: 0; min-height: 44px; text-align: center; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); font: 500 20px var(--font-data); }
-.check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
-.check input { width: 22px; height: 22px; accent-color: var(--holiday); flex: none; }
-.error { margin: 0; color: var(--danger); font-size: 13.5px; }
-.row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: 600 14px var(--font-body); cursor: pointer; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn:hover, .icon-button:hover, .text-button:hover { filter: brightness(.97); }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .btn.danger { color: var(--danger); }
+.btn.small { min-height: 36px; padding-inline: 12px; font-size: 13px; }
+.icon-button { padding: 0; display: grid; place-items: center; font-size: 20px; }
+.text-button { border: 0; background: transparent; color: var(--accent); padding: 6px; font-weight: 700; }
+.mini-link { font-size: 13px; font-weight: 700; text-decoration: none; }
 
-.detail { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
-.detail h2 { padding: 14px 16px 10px; font-size: 16px; font-weight: 700; }
-.rowbtn {
-  display: grid; grid-template-columns: 3.4rem minmax(0, 1fr) auto; align-items: center; gap: 8px;
-  width: 100%; min-height: 48px; padding: 6px 16px; border: 0; border-top: 1px solid var(--line);
-  background: transparent; text-align: left; cursor: pointer;
+#view { padding-top: clamp(22px, 3vw, 38px); }
+.dashboard-hero, .page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 26px;
 }
-.rowbtn:active { background: var(--surface-2); }
-.rd { font-weight: 600; font-variant-numeric: tabular-nums; }
-.rd small { font: 500 11px var(--font-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
-.rh { font: 400 14px var(--font-data); font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
-.tag { font: 600 11px var(--font-body); font-style: normal; color: var(--holiday); border: 1px solid var(--holiday); border-radius: 999px; padding: 1px 8px; }
-.rm { font: 500 14px var(--font-data); font-variant-numeric: tabular-nums; }
-.empty { margin: 0; padding: 4px 16px 18px; color: var(--muted); }
+.dashboard-hero { min-height: 122px; }
+.eyebrow, .section-kicker { color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+.dashboard-hero h1, .page-heading h1 { max-width: 760px; margin-top: 5px; font-size: clamp(28px, 4vw, 46px); line-height: 1.02; letter-spacing: -.035em; }
+.lede { max-width: 660px; margin-top: 10px; color: var(--muted); font-size: 16px; }
+.hero-action { flex: none; }
 
-details.more { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding-inline: 16px; }
-details.more summary { min-height: 48px; display: flex; align-items: center; font: 700 15px var(--font-display); cursor: pointer; }
-.more-body { display: flex; flex-direction: column; gap: 14px; padding-bottom: 16px; }
-.field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.field input { width: 5rem; min-height: 40px; text-align: center; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font: 500 16px var(--font-data); }
-fieldset.dowset { border: 0; margin: 0; padding: 0; min-width: 0; }
-fieldset.dowset legend { padding: 0; margin-bottom: 8px; }
-.dowgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-.dowgrid label { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
-.dowgrid input { width: 100%; min-width: 0; min-height: 40px; text-align: center; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font: 500 15px var(--font-data); padding-inline: 2px; }
-.dowgrid .eyebrow { text-align: center; }
-textarea.export { width: 100%; min-height: 8rem; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font: 400 12px/1.4 var(--font-data); padding: 8px; resize: vertical; }
-.stack { display: flex; flex-direction: column; gap: 10px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi-card, .collection-card, .tracker-widget, .income-card, .calendar-panel, .payment-panel, .settings-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 18px;
+}
+.kpi-card { min-height: 146px; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; }
+.kpi-card span { color: var(--muted); font-size: 13px; font-weight: 650; }
+.kpi-card strong { font: 700 clamp(23px, 2.6vw, 34px)/1 var(--font-display); letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.kpi-card small { color: var(--muted); font-size: 12px; }
+.kpi-card.accent { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.kpi-card.accent span, .kpi-card.accent small { color: color-mix(in srgb, var(--on-accent) 74%, transparent); }
+.kpi-card.total { background: var(--surface-2); }
 
-@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+.dashboard-split { display: grid; grid-template-columns: minmax(260px, .9fr) minmax(360px, 1.1fr); gap: 14px; margin-top: 14px; }
+.collection-card, .tracker-widget { padding: 20px; }
+.collection-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+.collection-amounts span, .tracker-numbers span { display: block; color: var(--muted); font-size: 12px; }
+.collection-amounts strong { display: block; margin-top: 3px; font: 650 21px var(--font-data); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.collection-bar { height: 10px; margin-top: 18px; overflow: hidden; border-radius: 999px; background: var(--surface-2); }
+.collection-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+.collection-card p { margin-top: 9px; color: var(--muted); font-size: 13px; }
+.tracker-title-row, .card-heading, .card-topline, .card-footer, .calendar-toolbar, .section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.tracker-title-row h3 { font-size: 21px; }
+.tracker-title-row p { margin-top: 2px; color: var(--muted); font-size: 13px; }
+.tracker-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.tracker-numbers b { display: block; margin-top: 3px; font: 500 17px var(--font-data); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.tracker-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 20px; color: var(--muted); font-size: 13px; }
+
+.module-section { margin-top: 34px; }
+.module-section.two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.section-header { align-items: center; margin-bottom: 12px; }
+.section-header h2 { margin-top: 2px; font-size: 23px; letter-spacing: -.02em; }
+.card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.catalog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.stack-list { display: flex; flex-direction: column; gap: 10px; }
+.income-card { padding: 16px; min-width: 0; }
+.income-card.compact { padding: 14px; }
+.card-topline { min-height: 25px; }
+.badge-group { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.type-badge, .badge { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: 23px; border-radius: 999px; padding: 2px 8px; border: 1px solid var(--line); font-size: 10px; font-weight: 750; letter-spacing: .03em; white-space: nowrap; }
+.type-badge { color: var(--muted); background: var(--surface-3); }
+.type-badge.saas { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.type-badge.project { color: var(--holiday); border-color: color-mix(in srgb, var(--holiday) 50%, var(--line)); }
+.badge.payment.paid { color: var(--accent); border-color: var(--accent); }
+.badge.payment.partial { color: var(--holiday); border-color: var(--holiday); }
+.badge.payment.pending { color: var(--muted); }
+.badge.project.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.badge.project.development { color: var(--holiday); border-color: color-mix(in srgb, var(--holiday) 55%, var(--line)); }
+.badge.project.paused { color: var(--muted); }
+.badge.project.delivered { color: var(--ink); }
+.card-heading { margin-top: 12px; }
+.card-heading h3 { font-size: 19px; line-height: 1.1; overflow-wrap: anywhere; }
+.card-heading p { margin-top: 5px; color: var(--muted); font: 12px var(--font-data); }
+.card-amount { flex: none; font: 500 18px/1.15 var(--font-data); letter-spacing: -.05em; font-variant-numeric: tabular-nums; text-align: right; }
+.card-amount.positive { color: var(--accent); }
+.card-amount.muted { color: var(--muted); }
+.card-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; min-height: 20px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+.meta-item { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.note-preview { flex: 1 1 100%; }
+.card-footer { align-items: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.card-actions { display: flex; align-items: center; gap: 4px; }
+
+.empty-state { grid-column: 1 / -1; min-height: 184px; padding: 24px; border: 1px dashed var(--line); border-radius: 16px; background: var(--surface); background: color-mix(in srgb, var(--surface) 66%, transparent); display: grid; place-items: center; text-align: center; }
+.empty-state .empty-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font: 500 24px var(--font-data); }
+.empty-state h3 { margin-top: 8px; font-size: 17px; }
+.empty-state p { max-width: 340px; margin: 5px 0 14px; color: var(--muted); font-size: 13px; }
+
+.hours-summary-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(270px, .85fr); gap: 14px; }
+.tracker-widget.large { min-height: 242px; display: flex; flex-direction: column; justify-content: center; }
+.tracker-widget.large .tracker-numbers { margin-top: 25px; }
+.payment-panel, .settings-card { padding: 20px; }
+.payment-panel h2, .settings-card h2 { margin: 3px 0 16px; font-size: 22px; }
+.payment-panel label, .dialog-grid label, .settings-card label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 650; }
+.payment-panel label + label { margin-top: 12px; }
+.payment-panel select, .payment-panel input, .dialog-grid input, .dialog-grid select, .dialog-grid textarea, .settings-card input {
+  width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); color: var(--ink);
+}
+.payment-panel .note { margin: 13px 0; color: var(--muted); font-size: 13px; }
+.calendar-panel { margin-top: 14px; padding: 20px; }
+.calendar-toolbar { align-items: center; }
+.calendar-toolbar h2 { margin-top: 2px; font-size: 23px; }
+.rate-field { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 650; }
+.rate-field input { width: 120px; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; background: var(--bg); color: var(--ink); font: 500 16px var(--font-data); }
+.mode-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 20px; padding: 4px; border-radius: 14px; background: var(--surface-2); }
+.mode-tabs button { min-height: 42px; }
+.mode-tabs button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / .13); }
+.hint { margin: 10px 0 16px; color: var(--muted); font-size: 13px; }
+.weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.weekdays { margin-bottom: 6px; }
+.weekdays span { text-align: center; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.day { position: relative; min-width: 0; aspect-ratio: 1 / 1.05; min-height: 50px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); text-align: left; display: flex; flex-direction: column; justify-content: space-between; font-weight: 700; }
+.day small { min-height: 10px; font: 500 10px var(--font-data); letter-spacing: -.04em; white-space: nowrap; }
+.day.weekend { background: var(--surface-2); }
+.day.holiday { background: var(--holiday-soft); border-color: var(--holiday); }
+.day.holiday::after { content: ''; position: absolute; top: 0; right: 0; width: 13px; height: 13px; background: var(--holiday); clip-path: polygon(0 0,100% 0,100% 100%); }
+.day.worked { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.day.worked.holiday { background: var(--holiday); border-color: var(--holiday); color: #2b1703; }
+.day.today { box-shadow: inset 0 0 0 2px var(--ink); }
+.day.blank { visibility: hidden; pointer-events: none; }
+.calendar-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.calendar-total strong { color: var(--ink); font: 500 19px var(--font-data); letter-spacing: -.05em; }
+
+.settings-layout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.default-hours-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.default-hours-grid label { align-items: center; }
+.default-hours-grid label span { text-transform: uppercase; font-size: 10px; }
+.default-hours-grid input { min-width: 0; text-align: center; padding-inline: 2px; font: 500 15px var(--font-data); }
+.wide-label { margin-top: 15px; }
+.settings-card .note { margin-top: 14px; color: var(--muted); font-size: 13px; }
+.button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
+dialog { width: min(calc(100% - 24px), 680px); max-height: min(92vh, 760px); padding: 0; border: 1px solid var(--line); border-radius: 20px; color: var(--ink); background: var(--surface); box-shadow: 0 24px 80px rgb(0 0 0 / .35); }
+dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
+.dialog-content { padding: clamp(18px, 4vw, 28px); overflow: auto; max-height: min(92vh, 760px); }
+.dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.dialog-header h2 { margin-top: 3px; font-size: 27px; }
+.dialog-close { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink); font-size: 22px; }
+.dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+.dialog-grid .full { grid-column: 1 / -1; }
+.dialog-grid .field-wrap { min-width: 0; }
+.dialog-grid textarea { min-height: 92px; resize: vertical; }
+.dialog-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 22px; }
+.dialog-actions .spacer { flex: 1; }
+.form-error { margin-top: 12px; color: var(--danger); font-size: 13px; }
+.import-dialog { width: min(calc(100% - 24px), 520px); }
+.import-dialog p { margin: 12px 0 18px; color: var(--muted); }
+.checkbox-line { display: flex; align-items: center; min-height: 42px; gap: 8px; color: var(--ink); font-weight: 500; }
+.checkbox-line input { width: 20px; min-height: 20px; accent-color: var(--accent); }
+
+@media (max-width: 1080px) {
+  .controlbar { grid-template-columns: 1fr auto; }
+  .filter-control { grid-column: 1 / -1; width: max-content; }
+  .kpi-grid, .catalog-grid, .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .app-shell { padding-inline: 14px; }
+  .app-topbar { align-items: flex-start; }
+  .top-actions { flex-direction: column-reverse; align-items: flex-end; gap: 6px; }
+  .controlbar { display: flex; flex-wrap: wrap; gap: 8px; }
+  .main-nav { order: 1; flex: 1 1 100%; }
+  .period-control { order: 2; }
+  .filter-control { order: 3; margin-left: auto; }
+  .dashboard-hero, .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .dashboard-hero h1, .page-heading h1 { font-size: clamp(28px, 9vw, 40px); }
+  .hero-action { width: 100%; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-card { min-height: 128px; }
+  .dashboard-split, .hours-summary-layout, .module-section.two-columns { grid-template-columns: 1fr; }
+  .module-section.two-columns { gap: 26px; }
+  .tracker-widget.large { min-height: 0; }
+  .settings-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .app-shell { padding-inline: 12px; }
+  .brand-subtitle { display: none; }
+  .status { max-width: 135px; overflow: hidden; text-overflow: ellipsis; }
+  .top-actions .btn { padding-inline: 12px; }
+  .period-name { min-width: 118px; font-size: 13px; }
+  .filter-control { width: 100%; justify-content: space-between; }
+  .filter-control button { flex: 1; }
+  .kpi-grid, .catalog-grid, .card-grid { grid-template-columns: 1fr; }
+  .kpi-card { min-height: 112px; }
+  .kpi-card strong { font-size: 29px; }
+  .collection-card, .tracker-widget, .calendar-panel, .payment-panel, .settings-card { padding: 16px; border-radius: 16px; }
+  .tracker-numbers { gap: 8px; }
+  .tracker-numbers b { font-size: 15px; }
+  .calendar-toolbar { align-items: flex-start; flex-direction: column; }
+  .rate-field { width: 100%; justify-content: space-between; }
+  .rate-field input { width: 142px; }
+  .day { min-height: 42px; padding: 4px; border-radius: 8px; font-size: 13px; }
+  .day small { font-size: 9px; }
+  .weekdays, .calendar-grid { gap: 4px; }
+  .calendar-total { align-items: flex-start; flex-direction: column; }
+  .dialog-grid { grid-template-columns: 1fr; }
+  .dialog-grid .full { grid-column: auto; }
+  .dialog-actions .spacer { display: none; }
+  .dialog-actions .btn { flex: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+}
 </style>
 </head>
 <body>
-<div class="app" id="app">
-  <header class="top">
-    <span class="brand">Libreta de horas</span>
-    <span class="status" id="status" role="status" data-state="idle">Se guarda en este dispositivo</span>
-  </header>
+  <div class="app-shell">
+    <header class="app-topbar">
+      <div class="brand-block">
+        <span class="brand">Libreta de horas</span>
+        <span class="brand-subtitle">Hub central de ingresos</span>
+      </div>
+      <div class="top-actions">
+        <span class="status" id="status" role="status" data-state="idle">Se guarda en este dispositivo</span>
+        <button id="addSource" class="btn primary" type="button">+ Nueva fuente</button>
+      </div>
+    </header>
 
-  <div class="install" id="installRow" hidden>
-    <span id="installText">Instalá la app en tu dispositivo.</span>
-    <div class="row-actions">
-      <button class="btn primary" type="button" id="installBtn">Instalar</button>
-      <button class="btn" type="button" id="installClose" aria-label="Ocultar este aviso">Ahora no</button>
-    </div>
+    <section class="controlbar" aria-label="Navegación y período">
+      <nav class="main-nav" id="mainNav" aria-label="Navegación principal">
+        <button type="button" data-route="hub" aria-current="page">Hub</button>
+        <button type="button" data-route="saas" aria-current="false">Micro-SaaS</button>
+        <button type="button" data-route="projects" aria-current="false">Desarrollos</button>
+        <button type="button" data-route="hours" aria-current="false">Tracker de horas</button>
+        <button type="button" data-route="settings" aria-current="false">Ajustes</button>
+      </nav>
+      <div class="period-control" aria-label="Período">
+        <button id="prevPeriod" class="icon-button" type="button" aria-label="Mes anterior">‹</button>
+        <span id="periodLabel" class="period-name"></span>
+        <label class="month-picker" aria-label="Elegir mes"><input id="periodInput" type="month"></label>
+        <button id="todayPeriod" class="today-button" type="button">Hoy</button>
+        <button id="nextPeriod" class="icon-button" type="button" aria-label="Mes siguiente">›</button>
+      </div>
+      <div id="filterControl" class="filter-control" role="group" aria-label="Filtrar cobros">
+        <button type="button" data-filter="all" aria-pressed="true">Todo</button>
+        <button type="button" data-filter="pending" aria-pressed="false">Pendientes</button>
+        <button type="button" data-filter="paid" aria-pressed="false">Cobrados</button>
+      </div>
+    </section>
+
+    <main id="view"></main>
   </div>
 
-  <nav class="monthbar" aria-label="Mes">
-    <button class="iconbtn" id="prev" type="button" aria-label="Mes anterior">‹</button>
-    <div class="monthmid">
-      <h1 id="monthName"></h1>
-      <button class="linkbtn" id="todayBtn" type="button" hidden>Ir a hoy</button>
-    </div>
-    <button class="iconbtn" id="next" type="button" aria-label="Mes siguiente">›</button>
-  </nav>
-
-  <section class="sum" aria-labelledby="sumLabel">
-    <div>
-      <div class="eyebrow" id="sumLabel"></div>
-      <div class="total" id="total" aria-live="polite">$ 0</div>
-    </div>
-    <p class="hint" id="sumHint" hidden></p>
-    <div class="stats">
-      <div class="stat"><span class="eyebrow">Días</span><b id="sDays">0</b></div>
-      <div class="stat"><span class="eyebrow">Trabajadas</span><b id="sReal">0 h</b></div>
-      <div class="stat"><span class="eyebrow">A pagar</span><b id="sEq">0 h</b></div>
-      <div class="stat"><label class="eyebrow" for="rate">Valor hora</label><input class="rate" id="rate" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-describedby="multNote"></div>
-    </div>
-    <p class="note" id="multNote"></p>
-  </section>
-
-  <section class="cal" aria-label="Calendario">
-    <div class="modes" id="modes" role="group" aria-label="Qué hace tocar un día">
-      <button class="mode" type="button" data-mode="work" aria-pressed="true">Trabajé</button>
-      <button class="mode" type="button" data-mode="holiday" aria-pressed="false">Feriado</button>
-      <button class="mode" type="button" data-mode="edit" aria-pressed="false">Editar horas</button>
-    </div>
-    <p class="hint" id="modeHint"></p>
-    <div class="dow" aria-hidden="true"><span>Lu</span><span>Ma</span><span>Mi</span><span>Ju</span><span>Vi</span><span>Sá</span><span>Do</span></div>
-    <div class="grid" id="grid"></div>
-  </section>
-
-  <section class="editor" id="editor" hidden aria-labelledby="edTitle">
-    <h2 id="edTitle"></h2>
-    <form id="edForm" novalidate>
-      <label class="eyebrow" for="edHours">Horas trabajadas</label>
-      <div class="stepper">
-        <button class="iconbtn" type="button" id="edMinus" aria-label="Restar media hora">−</button>
-        <input class="hoursinput" id="edHours" type="text" inputmode="decimal" autocomplete="off">
-        <button class="iconbtn" type="button" id="edPlus" aria-label="Sumar media hora">+</button>
+  <dialog id="sourceDialog" aria-labelledby="sourceDialogTitle">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div><p class="eyebrow">Fuente de ingreso</p><h2 id="sourceDialogTitle">Nueva fuente</h2></div>
+        <button id="closeSource" class="dialog-close" type="button" aria-label="Cerrar">×</button>
       </div>
-      <label class="check"><input type="checkbox" id="edHoliday"><span id="edHolText"></span></label>
-      <p class="error" id="edError" role="alert" hidden></p>
-      <div class="row-actions">
-        <button class="btn primary" type="submit">Guardar</button>
-        <button class="btn danger" type="button" id="edRemove">Quitar día</button>
-        <button class="btn" type="button" id="edClose">Cerrar</button>
-      </div>
-    </form>
-  </section>
-
-  <section class="detail" aria-labelledby="detailTitle">
-    <h2 id="detailTitle">Días trabajados</h2>
-    <div id="rows"></div>
-  </section>
-
-  <details class="more">
-    <summary>Ajustes</summary>
-    <div class="more-body">
-      <div class="field">
-        <label for="multInput">Un feriado trabajado cuenta por</label>
-        <input id="multInput" type="text" inputmode="decimal" autocomplete="off">
-      </div>
-      <fieldset class="dowset">
-        <legend class="eyebrow">Horas que se cargan al tocar cada día</legend>
-        <div class="dowgrid" id="dowGrid"></div>
-      </fieldset>
-      <p class="note">Los cambios valen para los días que marques de ahora en adelante. Los ya marcados no se tocan. Para un sábado o domingo, la app te pide las horas.</p>
-    </div>
-  </details>
-
-  <details class="more">
-    <summary>Copia de seguridad</summary>
-    <div class="more-body">
-      <p class="note">Tus datos quedan guardados solo en este dispositivo. Descargá un backup de vez en cuando, sobre todo antes de borrar los datos del navegador o cambiar de teléfono.</p>
-      <div class="row-actions">
-        <button class="btn" type="button" id="exportBtn">Descargar backup</button>
-        <button class="btn" type="button" id="importBtn">Importar backup</button>
-        <input id="importFile" type="file" accept=".json,application/json" hidden>
-      </div>
-      <p class="note" id="backupMsg" role="status"></p>
-      <div class="stack" id="exportFallback" hidden>
-        <textarea class="export" id="exportText" readonly aria-label="Contenido del backup"></textarea>
-        <div class="row-actions"><button class="btn" type="button" id="copyBtn">Copiar</button></div>
-      </div>
-      <div class="stack" id="importConfirm" hidden>
-        <p class="hint" id="importSummary"></p>
-        <div class="row-actions">
-          <button class="btn primary" type="button" id="importApply">Reemplazar datos</button>
-          <button class="btn" type="button" id="importCancel">Cancelar</button>
+      <form id="sourceForm" novalidate>
+        <input type="hidden" name="id">
+        <div class="dialog-grid">
+          <label class="full">Nombre de la app, proyecto o cliente
+            <input name="name" maxlength="120" autocomplete="off" required placeholder="Ej. Mantenimiento Tienda Norte">
+          </label>
+          <label>Tipo de ingreso
+            <select name="type">
+              <option value="saas">Micro-SaaS / Suscripción</option>
+              <option value="project">Desarrollo puntual (pago único)</option>
+              <option value="hours">Servicio por horas / Freelance</option>
+              <option value="fixed">Ingreso fijo / Extra</option>
+            </select>
+          </label>
+          <label id="sourceAmountWrap"><span id="sourceAmountLabel">Monto</span>
+            <input name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
+          </label>
+          <label id="sourceCycleWrap">Ciclo de cobro
+            <select name="billingCycle">
+              <option value="monthly">Mensual</option>
+              <option value="weekly">Semanal</option>
+              <option value="quarterly">Trimestral</option>
+              <option value="annual">Anual</option>
+              <option value="once">Única vez</option>
+            </select>
+          </label>
+          <label id="sourceClientsWrap">Suscriptores / clientes
+            <input name="clients" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+          </label>
+          <label id="sourceHoursWrap">Horas estimadas del período
+            <input name="estimatedHours" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
+          </label>
+          <label>Estado del proyecto
+            <select name="projectStatus">
+              <option value="development">En desarrollo</option>
+              <option value="active">Activo</option>
+              <option value="paused">Pausado</option>
+              <option value="delivered">Entregado</option>
+            </select>
+          </label>
+          <label>Estado de pago en este período
+            <select name="paymentStatus">
+              <option value="pending">Pendiente</option>
+              <option value="partial">Cobrado parcial</option>
+              <option value="paid">Cobrado total</option>
+            </select>
+          </label>
+          <label>Monto ya cobrado
+            <input name="paidAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
+          </label>
+          <label><span id="sourceDateLabel">Fecha estimada de cobro</span>
+            <input name="expectedDate" type="date">
+          </label>
+          <label class="full">Enlace del proyecto (opcional)
+            <input name="url" type="url" inputmode="url" autocomplete="url" placeholder="https://...">
+          </label>
+          <label class="full">Notas adicionales
+            <textarea name="notes" maxlength="1500" placeholder="Alcance, próximo paso, detalle de cobro…"></textarea>
+          </label>
         </div>
-      </div>
+        <p id="sourceError" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="deleteSource" class="btn danger" type="button" hidden>Eliminar</button>
+          <span class="spacer"></span>
+          <button class="btn" type="button" id="cancelSource">Cancelar</button>
+          <button class="btn primary" type="submit">Guardar fuente</button>
+        </div>
+      </form>
     </div>
-  </details>
-</div>
-<noscript>Esta app necesita JavaScript para funcionar.</noscript>
+  </dialog>
 
-<script>
-// ==== PURE:START
-// Lógica de cálculo y fechas. Sin DOM ni almacenamiento, para poder probarla sola.
-// Las fechas son siempre texto local "YYYY-MM-DD"; nunca se usa toISOString para esto.
-const DEFAULT_HOURS = [0, 6, 5, 6, 5, 6, 0]; // índice = getDay(): 0 dom, 1 lun ... 6 sáb
-const DEFAULT_MULT = 2;
-// Feriados nacionales 2026 (sin puentes turísticos). Verificar contra la fuente oficial.
-// Para otros años, marcá los feriados a mano en el modo "Feriado".
-const HOLIDAYS_2026 = [
-  '2026-01-01', '2026-02-16', '2026-02-17', '2026-03-24', '2026-04-02', '2026-04-03',
-  '2026-05-01', '2026-05-25', '2026-06-15', '2026-06-20', '2026-07-09', '2026-08-17',
-  '2026-10-12', '2026-11-23', '2026-12-08', '2026-12-25'
-];
-const pad = n => String(n).padStart(2, '0');
-const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d); // m: 1-12
-const isDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
-const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return { y, m, d }; };
-const dowOf = s => { const { y, m, d } = parseYmd(s); return new Date(y, m - 1, d).getDay(); };
-const monthKey = s => s.slice(0, 7);
-const daysInMonth = (y, m) => new Date(y, m, 0).getDate();
-const mondayOffset = (y, m) => (new Date(y, m - 1, 1).getDay() + 6) % 7;
-const defaultHoursFor = (s, hoursByDow) => hoursByDow[dowOf(s)];
+  <dialog id="hourDialog" aria-labelledby="hourDialogTitle">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div><p class="eyebrow">Registro diario</p><h2 id="hourDialogTitle">Editar horas</h2></div>
+        <button id="closeHour" class="dialog-close" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <form id="hourForm" novalidate>
+        <input id="hourDate" type="hidden">
+        <div class="dialog-grid">
+          <label>Horas trabajadas
+            <input id="hourInput" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej. 6,5">
+          </label>
+          <label>Feriado
+            <span class="checkbox-line"><input id="hourHoliday" type="checkbox"> Cuenta con multiplicador</span>
+          </label>
+        </div>
+        <p id="hourError" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="removeHour" class="btn danger" type="button" hidden>Quitar día</button>
+          <span class="spacer"></span>
+          <button class="btn primary" type="submit">Guardar horas</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 
-// Acepta "1500", "1.500", "1.500,50", "1500,5" y "1500.5".
-function parseNum(str) {
-  let s = String(str).trim().replace(/[^\d.,-]/g, '');
-  if (!s) return NaN;
-  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
-  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-// days: { 'YYYY-MM-DD': horas }, holidays: Set de fechas.
-// Horas a pagar = horas trabajadas, con las de feriado multiplicadas por mult.
-function calcMonth(days, holidays, rate, mult) {
-  let n = 0, real = 0, eq = 0;
-  for (const date of Object.keys(days)) {
-    const h = Number(days[date]);
-    if (!(h > 0)) continue;
-    n++;
-    real += h;
-    eq += holidays.has(date) ? h * mult : h;
-  }
-  const r = Number(rate) || 0;
-  return { days: n, real, eq, total: Math.round(eq * r * 100) / 100 };
-}
-// ==== PURE:END
-
-(function () {
-  'use strict';
-  const $ = id => document.getElementById(id);
-  const el = {};
-  ['status', 'installRow', 'installText', 'installBtn', 'installClose', 'monthName', 'prev', 'next', 'todayBtn',
-    'sumLabel', 'total', 'sumHint', 'sDays', 'sReal', 'sEq', 'rate', 'multNote', 'modes', 'modeHint', 'grid',
-    'editor', 'edTitle', 'edForm', 'edHours', 'edMinus', 'edPlus', 'edHoliday', 'edHolText', 'edError', 'edRemove',
-    'edClose', 'rows', 'multInput', 'dowGrid', 'exportBtn', 'importBtn', 'importFile', 'backupMsg',
-    'exportFallback', 'exportText', 'copyBtn', 'importConfirm', 'importSummary', 'importApply', 'importCancel'
-  ].forEach(id => { el[id] = $(id); });
-
-  const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  const num = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
-  const fmtMonthYear = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' });
-  const fmtMonth = new Intl.DateTimeFormat('es-AR', { month: 'long' });
-  const fmtLong = new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const fmtDow = new Intl.DateTimeFormat('es-AR', { weekday: 'short' });
-  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-  const inputNum = n => String(n).replace('.', ',');
-  const dateOf = s => { const p = parseYmd(s); return new Date(p.y, p.m - 1, p.d); };
-  const todayStr = () => { const t = new Date(); return ymd(t.getFullYear(), t.getMonth() + 1, t.getDate()); };
-
-  const now = new Date();
-  const state = {
-    mode: 'work',
-    editing: null,
-    view: { y: now.getFullYear(), m: now.getMonth() + 1 },
-    settings: { rate: 0, mult: DEFAULT_MULT, hours: DEFAULT_HOURS.slice(), holidays: new Set(HOLIDAYS_2026) },
-    months: new Map()
-  };
-  const curKey = () => state.view.y + '-' + pad(state.view.m);
-  const curDays = () => (state.months.get(curKey()) || { days: {} }).days;
-
-  /* ---------- almacenamiento: localStorage, un registro por mes y uno de ajustes ---------- */
-  const LS = 'libreta-horas:';
-  function lsRead(key) { try { const s = localStorage.getItem(LS + key); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-  function lsWrite(key, data) { try { localStorage.setItem(LS + key, JSON.stringify(data)); return true; } catch (e) { return false; } }
-  function lsKeys() {
-    const out = [];
-    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(LS) === 0) out.push(k.slice(LS.length)); } } catch (e) { /* sin acceso */ }
-    return out;
-  }
-  function storageWorks() {
-    try { localStorage.setItem(LS + 'probe', '1'); localStorage.removeItem(LS + 'probe'); return true; } catch (e) { return false; }
-  }
-
-  const STATUS_TEXT = { idle: 'Se guarda en este dispositivo', saved: 'Guardado', error: 'No se pudo guardar' };
-  function setStatus(kind) { el.status.textContent = STATUS_TEXT[kind]; el.status.dataset.state = kind; }
-  function persist(key, data) { const ok = lsWrite(key, data); setStatus(ok ? 'saved' : 'error'); return ok; }
-
-  const serializeSettings = () => {
-    const s = state.settings;
-    return { rate: s.rate, mult: s.mult, hours: s.hours.slice(), holidays: Array.from(s.holidays).sort() };
-  };
-  const saveSettings = () => persist('settings', serializeSettings());
-  const saveMonth = mk => persist('m-' + mk, { days: Object.assign({}, state.months.get(mk).days) });
-
-  function applySettings(s) {
-    if (!s || typeof s !== 'object') return;
-    const st = state.settings;
-    if (Number.isFinite(s.rate) && s.rate >= 0) st.rate = s.rate;
-    if (Number.isFinite(s.mult) && s.mult >= 1) st.mult = s.mult;
-    if (Array.isArray(s.hours) && s.hours.length === 7 && s.hours.every(x => Number.isFinite(x) && x >= 0 && x <= 24)) st.hours = s.hours.slice();
-    if (Array.isArray(s.holidays)) st.holidays = new Set(s.holidays.filter(isDate));
-  }
-  function loadMonth(mk) {
-    if (state.months.has(mk)) return;
-    const d = lsRead('m-' + mk);
-    const days = {};
-    if (d && d.days && typeof d.days === 'object') {
-      for (const [k, v] of Object.entries(d.days)) {
-        const x = Number(v);
-        if (isDate(k) && monthKey(k) === mk && x > 0 && x <= 24) days[k] = x;
-      }
-    }
-    state.months.set(mk, { days });
-  }
-
-  /* ---------- dibujo ---------- */
-  const MODE_HINT = {
-    work: 'Tocá los días que trabajaste. Tocá de nuevo para sacarlo.',
-    holiday: 'Tocá un día para marcarlo o sacarlo como feriado.',
-    edit: 'Tocá un día para cambiar las horas que trabajaste.'
-  };
-
-  function renderHeader() {
-    const { y, m } = state.view;
-    el.monthName.textContent = cap(fmtMonthYear.format(new Date(y, m - 1, 1)));
-    const t = new Date();
-    el.todayBtn.hidden = (y === t.getFullYear() && m === t.getMonth() + 1);
-    el.modeHint.textContent = MODE_HINT[state.mode];
-    el.modes.querySelectorAll('.mode').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
-  }
-
-  function renderSummary() {
-    const { y, m } = state.view;
-    const st = state.settings;
-    const r = calcMonth(curDays(), st.holidays, st.rate, st.mult);
-    el.sumLabel.textContent = 'A cobrar en ' + fmtMonth.format(new Date(y, m - 1, 1));
-    el.total.textContent = money.format(r.total);
-    el.sDays.textContent = String(r.days);
-    el.sReal.textContent = num.format(r.real) + ' h';
-    el.sEq.textContent = num.format(r.eq) + ' h';
-    if (document.activeElement !== el.rate) el.rate.value = st.rate > 0 ? inputNum(st.rate) : '';
-    el.multNote.textContent = 'Un feriado trabajado cuenta ×' + num.format(st.mult) + '.';
-    let hint = '';
-    if (!(st.rate > 0)) hint = 'Cargá tu valor por hora para ver cuánto vas a cobrar.';
-    else if (r.days === 0) hint = 'Todavía no marcaste días este mes.';
-    el.sumHint.textContent = hint;
-    el.sumHint.hidden = !hint;
-  }
-
-  function renderCalendar() {
-    const { y, m } = state.view;
-    const days = curDays();
-    const st = state.settings;
-    const off = mondayOffset(y, m), dim = daysInMonth(y, m), today = todayStr();
-    let html = '';
-    for (let i = 0; i < off; i++) html += '<div class="day blank" aria-hidden="true"></div>';
-    for (let d = 1; d <= dim; d++) {
-      const date = ymd(y, m, d);
-      const dw = dowOf(date);
-      const h = days[date] > 0 ? days[date] : 0;
-      const hol = st.holidays.has(date);
-      const cls = ['day'];
-      if (dw === 0 || dw === 6) cls.push('we');
-      if (hol) cls.push('hol');
-      if (h) cls.push('on');
-      if (date === today) cls.push('today');
-      let label = fmtLong.format(dateOf(date));
-      if (h) label += ', trabajado ' + num.format(h) + (h === 1 ? ' hora' : ' horas');
-      if (hol) label += ', feriado';
-      const tag = h ? num.format(h) + 'h' + (hol ? '×' + num.format(st.mult) : '') : '';
-      html += '<button type="button" class="' + cls.join(' ') + '" data-date="' + date + '" aria-pressed="' + (h ? 'true' : 'false') +
-        '" aria-label="' + label + '"><span class="n">' + d + '</span><span class="h">' + tag + '</span></button>';
-    }
-    el.grid.innerHTML = html;
-  }
-
-  function renderDetail() {
-    const days = curDays();
-    const st = state.settings;
-    const dates = Object.keys(days).filter(d => days[d] > 0).sort();
-    if (!dates.length) {
-      el.rows.innerHTML = '<p class="empty">Todavía no marcaste ningún día en ' + fmtMonth.format(new Date(state.view.y, state.view.m - 1, 1)) +
-        '. Tocá un día del calendario cuando trabajes.</p>';
-      return;
-    }
-    el.rows.innerHTML = dates.map(d => {
-      const h = days[d];
-      const hol = st.holidays.has(d);
-      const amount = Math.round(h * (hol ? st.mult : 1) * st.rate * 100) / 100;
-      const dow = fmtDow.format(dateOf(d)).replace('.', '');
-      return '<button type="button" class="rowbtn" data-date="' + d + '"><span class="rd"><small>' + dow + '</small> ' + parseYmd(d).d +
-        '</span><span class="rh">' + num.format(h) + ' h' + (hol ? '<em class="tag">feriado ×' + num.format(st.mult) + '</em>' : '') +
-        '</span><span class="rm">' + (st.rate > 0 ? money.format(amount) : '') + '</span></button>';
-    }).join('');
-  }
-
-  function renderSettingsForm() {
-    const order = [1, 2, 3, 4, 5, 6, 0];
-    const names = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
-    el.dowGrid.innerHTML = order.map((dw, i) =>
-      '<label><span class="eyebrow">' + names[i] + '</span><input type="text" inputmode="decimal" autocomplete="off" data-dow="' + dw +
-      '" value="' + inputNum(state.settings.hours[dw]) + '" aria-label="Horas por defecto, ' + names[i] + '"></label>').join('');
-    el.multInput.value = inputNum(state.settings.mult);
-  }
-
-  function render() {
-    renderHeader();
-    renderSummary();
-    renderCalendar();
-    renderDetail();
-  }
-
-  /* ---------- acciones sobre los días ---------- */
-  function toggleHoliday(date) {
-    const set = state.settings.holidays;
-    if (set.has(date)) set.delete(date); else set.add(date);
-    saveSettings();
-    if (state.editing === date) el.edHoliday.checked = set.has(date);
-    render();
-  }
-
-  function onDay(date) {
-    const mk = monthKey(date);
-    const days = state.months.get(mk).days;
-    if (state.mode === 'holiday') { toggleHoliday(date); return; }
-    if (state.mode === 'edit') { openEditor(date); return; }
-    if (days[date] > 0) {
-      delete days[date];
-      if (state.editing === date) closeEditor();
-      saveMonth(mk);
-      render();
-      return;
-    }
-    const h = defaultHoursFor(date, state.settings.hours);
-    if (h > 0) { days[date] = h; saveMonth(mk); render(); }
-    else openEditor(date);
-  }
-
-  function openEditor(date) {
-    state.editing = date;
-    const days = curDays();
-    const st = state.settings;
-    const worked = days[date] > 0;
-    const cur = worked ? days[date] : defaultHoursFor(date, st.hours);
-    el.edTitle.textContent = cap(fmtLong.format(dateOf(date)));
-    el.edHours.value = cur > 0 ? inputNum(cur) : '';
-    el.edHoliday.checked = st.holidays.has(date);
-    el.edHolText.textContent = 'Es feriado (cuenta ×' + num.format(st.mult) + ')';
-    el.edRemove.hidden = !worked;
-    el.edError.hidden = true;
-    el.editor.hidden = false;
-    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    el.editor.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
-    el.edHours.focus();
-    el.edHours.select();
-  }
-  function closeEditor() {
-    state.editing = null;
-    el.editor.hidden = true;
-    el.edError.hidden = true;
-  }
-
-  function stepHours(delta) {
-    const v = parseNum(el.edHours.value);
-    const base = Number.isFinite(v) ? v : 0;
-    const next = Math.min(24, Math.max(0, Math.round((base + delta) * 2) / 2));
-    el.edHours.value = next > 0 ? inputNum(next) : '';
-  }
-
-  function goTo(y, m) {
-    state.view = { y, m };
-    closeEditor();
-    loadMonth(curKey());
-    render();
-  }
-  const shiftMonth = delta => {
-    let { y, m } = state.view;
-    m += delta;
-    if (m < 1) { m = 12; y--; }
-    if (m > 12) { m = 1; y++; }
-    goTo(y, m);
-  };
-
-  /* ---------- eventos ---------- */
-  el.prev.addEventListener('click', () => shiftMonth(-1));
-  el.next.addEventListener('click', () => shiftMonth(1));
-  el.todayBtn.addEventListener('click', () => { const t = new Date(); goTo(t.getFullYear(), t.getMonth() + 1); });
-  el.modes.addEventListener('click', e => {
-    const b = e.target.closest('.mode');
-    if (!b) return;
-    state.mode = b.dataset.mode;
-    renderHeader();
-  });
-  el.grid.addEventListener('click', e => {
-    const b = e.target.closest('.day[data-date]');
-    if (b) onDay(b.dataset.date);
-  });
-  el.rows.addEventListener('click', e => {
-    const b = e.target.closest('.rowbtn');
-    if (b) openEditor(b.dataset.date);
-  });
-
-  el.edMinus.addEventListener('click', () => stepHours(-0.5));
-  el.edPlus.addEventListener('click', () => stepHours(0.5));
-  el.edClose.addEventListener('click', closeEditor);
-  el.edHoliday.addEventListener('change', () => {
-    if (!state.editing) return;
-    const has = state.settings.holidays.has(state.editing);
-    if (el.edHoliday.checked !== has) toggleHoliday(state.editing);
-  });
-  el.edRemove.addEventListener('click', () => {
-    const date = state.editing;
-    if (!date) return;
-    const mk = monthKey(date);
-    delete state.months.get(mk).days[date];
-    saveMonth(mk);
-    closeEditor();
-    render();
-  });
-  el.edForm.addEventListener('submit', e => {
-    e.preventDefault();
-    const date = state.editing;
-    if (!date) return;
-    const h = parseNum(el.edHours.value);
-    if (!(h > 0) || h > 24) {
-      el.edError.textContent = 'Escribí las horas entre 0,5 y 24. Si no trabajaste ese día, tocá "Quitar día".';
-      el.edError.hidden = false;
-      return;
-    }
-    const mk = monthKey(date);
-    state.months.get(mk).days[date] = Math.round(h * 100) / 100;
-    saveMonth(mk);
-    closeEditor();
-    render();
-  });
-
-  el.rate.addEventListener('input', () => {
-    const raw = el.rate.value.trim();
-    const v = raw === '' ? 0 : parseNum(raw);
-    if (!Number.isFinite(v) || v < 0) return;
-    state.settings.rate = v;
-    saveSettings();
-    renderSummary();
-    renderDetail();
-  });
-  el.rate.addEventListener('blur', () => { el.rate.value = state.settings.rate > 0 ? inputNum(state.settings.rate) : ''; });
-
-  el.multInput.addEventListener('change', () => {
-    const v = parseNum(el.multInput.value);
-    if (Number.isFinite(v) && v >= 1 && v <= 10) { state.settings.mult = v; saveSettings(); render(); }
-    el.multInput.value = inputNum(state.settings.mult);
-  });
-  el.dowGrid.addEventListener('change', e => {
-    const inp = e.target.closest('input[data-dow]');
-    if (!inp) return;
-    const dw = Number(inp.dataset.dow);
-    const v = parseNum(inp.value);
-    if (Number.isFinite(v) && v >= 0 && v <= 24) { state.settings.hours[dw] = v; saveSettings(); }
-    inp.value = inputNum(state.settings.hours[dw]);
-  });
-
-  /* ---------- copia de seguridad ---------- */
-  const say = t => { el.backupMsg.textContent = t; };
-
-  function buildBackup() {
-    const months = {};
-    lsKeys().forEach(k => {
-      if (k.indexOf('m-') !== 0) return;
-      const v = lsRead(k);
-      if (v && v.days) months[k.slice(2)] = { days: v.days };
-    });
-    state.months.forEach((v, mk) => { months[mk] = { days: Object.assign({}, v.days) }; });
-    return { app: 'libreta-de-horas', version: 1, exportedAt: new Date().toISOString(), settings: serializeSettings(), months };
-  }
-
-  el.exportBtn.addEventListener('click', async () => {
-    el.exportFallback.hidden = true;
-    const json = JSON.stringify(buildBackup(), null, 2);
-    const filename = 'libreta-horas-backup-' + todayStr() + '.json';
-    const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    // En el celular se abre el menú de compartir (guardar en Archivos, WhatsApp, mail...).
-    if (touch && typeof File === 'function' && navigator.canShare) {
-      try {
-        const file = new File([json], filename, { type: 'application/json' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'Backup de la Libreta de horas' });
-          say('Backup listo.');
-          return;
-        }
-      } catch (e) {
-        if (e && e.name === 'AbortError') { say('Cancelaste el backup.'); return; }
-      }
-    }
-    try {
-      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      say('Backup descargado.');
-    } catch (e) {
-      el.exportText.value = json;
-      el.exportFallback.hidden = false;
-      say('No se pudo descargar el archivo. Copiá el texto y guardalo en un archivo .json.');
-    }
-  });
-  el.copyBtn.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(el.exportText.value); say('Copiado.'); }
-    catch (e) { el.exportText.focus(); el.exportText.select(); say('Seleccioné el texto. Copialo con el menú del teléfono.'); }
-  });
-
-  let importData = null;
-  function parseBackup(text) {
-    let o;
-    try { o = JSON.parse(text); } catch (e) { return { error: 'El archivo no es un JSON válido.' }; }
-    if (!o || o.app !== 'libreta-de-horas' || o.version !== 1 || !o.months || typeof o.months !== 'object') {
-      return { error: 'Este archivo no parece un backup de la Libreta de horas.' };
-    }
-    const months = {};
-    let count = 0;
-    for (const [mk, v] of Object.entries(o.months)) {
-      if (!/^\d{4}-\d{2}$/.test(mk) || !v || typeof v.days !== 'object' || !v.days) continue;
-      const days = {};
-      for (const [d, h] of Object.entries(v.days)) {
-        const x = Number(h);
-        if (isDate(d) && monthKey(d) === mk && x > 0 && x <= 24) days[d] = x;
-      }
-      months[mk] = { days };
-      count++;
-    }
-    return { months, settings: o.settings && typeof o.settings === 'object' ? o.settings : null, count };
-  }
-  el.importBtn.addEventListener('click', () => { el.importFile.value = ''; el.importFile.click(); });
-  el.importFile.addEventListener('change', async () => {
-    const f = el.importFile.files && el.importFile.files[0];
-    if (!f) return;
-    let text = '';
-    try { text = await f.text(); } catch (e) { say('No pude leer el archivo.'); return; }
-    const r = parseBackup(text);
-    if (r.error) { importData = null; el.importConfirm.hidden = true; say(r.error); return; }
-    importData = r;
-    el.importSummary.textContent = 'El archivo tiene ' + r.count + (r.count === 1 ? ' mes' : ' meses') +
-      (r.settings ? ' y tus ajustes' : '') + '. Esos datos reemplazan los que tenés ahora en esos meses.';
-    el.importConfirm.hidden = false;
-    say('');
-  });
-  el.importCancel.addEventListener('click', () => { importData = null; el.importConfirm.hidden = true; say('Importación cancelada.'); });
-  el.importApply.addEventListener('click', () => {
-    if (!importData) return;
-    for (const [mk, v] of Object.entries(importData.months)) {
-      state.months.set(mk, { days: v.days });
-      saveMonth(mk);
-    }
-    if (importData.settings) { applySettings(importData.settings); saveSettings(); renderSettingsForm(); }
-    importData = null;
-    el.importConfirm.hidden = true;
-    closeEditor();
-    render();
-    say('Backup importado.');
-  });
-
-  /* ---------- instalación ---------- */
-  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const hideInstallKey = 'hideInstall';
-  const installHidden = () => lsRead(hideInstallKey) === true;
-  let deferredPrompt = null;
-
-  function showInstall(text, withButton) {
-    if (standalone || installHidden()) return;
-    el.installText.textContent = text;
-    el.installBtn.hidden = !withButton;
-    el.installRow.hidden = false;
-  }
-  window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault();
-    deferredPrompt = e;
-    showInstall('Instalá la app para abrirla desde tu pantalla de inicio.', true);
-  });
-  window.addEventListener('appinstalled', () => { el.installRow.hidden = true; deferredPrompt = null; });
-  el.installBtn.addEventListener('click', async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    try { await deferredPrompt.userChoice; } catch (e) { /* sin respuesta */ }
-    deferredPrompt = null;
-    el.installRow.hidden = true;
-  });
-  el.installClose.addEventListener('click', () => { lsWrite(hideInstallKey, true); el.installRow.hidden = true; });
-  if (isIOS) showInstall('Para instalarla: tocá Compartir y elegí «Agregar a inicio».', false);
-
-  // Si la app quedó abierta de un día para el otro, se actualiza el día de hoy al volver.
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !state.editing) render(); });
-
-  /* ---------- arranque ---------- */
-  function boot() {
-    applySettings(lsRead('settings'));
-    loadMonth(curKey());
-    renderSettingsForm();
-    render();
-    if (!storageWorks()) setStatus('error');
-    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-      window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
-    }
-  }
-  boot();
-})();
-</script>
+  <dialog id="importDialog" class="import-dialog" aria-labelledby="importTitle">
+    <div class="dialog-content">
+      <div class="dialog-header"><div><p class="eyebrow">Copia de seguridad</p><h2 id="importTitle">Importar datos</h2></div></div>
+      <p id="importSummary"></p>
+      <div class="dialog-actions"><button id="cancelImport" class="btn" type="button">Cancelar</button><button id="applyImport" class="btn primary" type="button">Importar y reemplazar</button></div>
+    </div>
+  </dialog>
+  <input id="importFile" type="file" accept=".json,application/json" hidden>
+  <noscript>Esta app necesita JavaScript para funcionar.</noscript>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

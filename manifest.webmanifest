@@ -1,7 +1,7 @@
 {
-  "name": "Libreta de Horas",
-  "short_name": "Horas",
-  "description": "Calendario para marcar los días trabajados y ver las horas y el cobro del mes, con feriados al doble.",
+  "name": "Hub de Ingresos",
+  "short_name": "Ingresos",
+  "description": "Hub personal para controlar ingresos, proyectos, suscripciones, cobros y horas trabajadas.",
   "lang": "es-AR",
   "id": "./",
   "start_url": "./",
