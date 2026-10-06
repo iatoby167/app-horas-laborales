@@ -1,8 +1,10 @@
 import {
   BILLING_CYCLES,
+  CURRENCIES,
   PAYMENT_STATES,
   PROJECT_STATES,
   SOURCE_TYPES,
+  amountInArs,
   applyImportedSettings,
   calculateHub,
   calculateMonth,
@@ -16,6 +18,7 @@ import {
   getTrackerPayment,
   isValidDate,
   listStorageKeys,
+  loadExchangeRate,
   loadMonth,
   loadSettings,
   loadSources,
@@ -30,6 +33,7 @@ import {
   parseMonthKey,
   parseNumber,
   saveMonth,
+  saveExchangeRate,
   saveSettings,
   saveSources,
   saveTrackerPayments,
@@ -46,11 +50,15 @@ import {
 
 const $ = selector => document.querySelector(selector);
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
+const usdMoney = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 const number = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
 const monthYear = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' });
 const monthOnly = new Intl.DateTimeFormat('es-AR', { month: 'long' });
 const longDate = new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const shortDate = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' });
+const refreshedAt = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const BCRA_USD_ENDPOINT = 'https://api.bcra.gob.ar/estadisticascambiarias/v1.0/Cotizaciones/USD';
+const EXCHANGE_RATE_MAX_AGE = 6 * 60 * 60 * 1000;
 
 const elements = {
   nav: $('#mainNav'),
@@ -62,6 +70,10 @@ const elements = {
   closeSidebar: $('#closeSidebar'),
   sidebarNewSource: $('#sidebarNewSource'),
   activeSectionLabel: $('#activeSectionLabel'),
+  exchangeRateControl: $('#exchangeRateControl'),
+  exchangeRateValue: $('#exchangeRateValue'),
+  exchangeRateMeta: $('#exchangeRateMeta'),
+  refreshExchangeRate: $('#refreshExchangeRate'),
   periodInput: $('#periodInput'),
   periodLabel: $('#periodLabel'),
   filter: $('#filterControl'),
@@ -91,6 +103,9 @@ const state = {
   months: new Map(),
   sources: loadSources(),
   trackerPayments: loadTrackerPayments(),
+  exchangeRate: loadExchangeRate(),
+  exchangeLoading: false,
+  exchangeError: '',
   mode: 'work',
   editingDate: null,
   pendingImport: null,
@@ -267,7 +282,14 @@ function currentTrackerPayment() {
 
 function currentHub() {
   const tracker = currentTracker();
-  return calculateHub(state.sources, state.period, tracker.total, currentTrackerPayment());
+  return calculateHub(
+    state.sources,
+    state.period,
+    tracker.total,
+    currentTrackerPayment(),
+    state.exchangeRate.rate,
+    state.settings.rateCurrency
+  );
 }
 
 function formatMonth(key = state.period) {
@@ -282,6 +304,103 @@ function formatInputNumber(value) {
 function formatDate(value) {
   const date = dateOf(value);
   return date ? cap(shortDate.format(date)) : 'Sin fecha';
+}
+
+function formatCurrency(value, currency = 'ARS') {
+  return currency === 'USD' ? usdMoney.format(Number(value) || 0) : money.format(Number(value) || 0);
+}
+
+function currencyName(currency = 'ARS') {
+  return CURRENCIES[currency] || CURRENCIES.ARS;
+}
+
+function hasExchangeRate() {
+  return Number.isFinite(state.exchangeRate.rate) && state.exchangeRate.rate > 0;
+}
+
+function convertedToArs(amount, currency = 'ARS') {
+  return amountInArs(amount, currency, state.exchangeRate.rate);
+}
+
+function arsConversionLabel(amount, currency = 'ARS') {
+  if (currency !== 'USD') return '';
+  const converted = convertedToArs(amount, currency);
+  return converted === null ? 'Sin cotización oficial disponible' : `≈ ${money.format(converted)}`;
+}
+
+function exchangeRateIsStale() {
+  const fetchedAt = Date.parse(state.exchangeRate.fetchedAt || '');
+  return !hasExchangeRate() || !Number.isFinite(fetchedAt) || Date.now() - fetchedAt > EXCHANGE_RATE_MAX_AGE;
+}
+
+function exchangeRateMeta() {
+  if (!hasExchangeRate()) return state.exchangeError || 'Se actualizará al conectar';
+  const quoted = state.exchangeRate.quoteDate ? `Publicado ${formatDate(state.exchangeRate.quoteDate)}` : 'Última cotización publicada';
+  if (state.exchangeLoading) return `${quoted} · actualizando…`;
+  if (state.exchangeError) return `${quoted} · usando última guardada`;
+  const updated = state.exchangeRate.fetchedAt ? refreshedAt.format(new Date(state.exchangeRate.fetchedAt)) : '';
+  return updated ? `${quoted} · actualizado ${updated}` : quoted;
+}
+
+function renderExchangeRateControl() {
+  if (!elements.exchangeRateControl) return;
+  const stateName = state.exchangeLoading ? 'loading' : state.exchangeError ? 'error' : hasExchangeRate() ? 'ready' : 'idle';
+  elements.exchangeRateControl.dataset.state = stateName;
+  elements.exchangeRateControl.setAttribute('aria-busy', String(state.exchangeLoading));
+  elements.exchangeRateValue.textContent = state.exchangeLoading && !hasExchangeRate()
+    ? 'Actualizando…'
+    : hasExchangeRate()
+      ? `1 USD = ${money.format(state.exchangeRate.rate)}`
+      : 'Sin cotización';
+  elements.exchangeRateMeta.textContent = exchangeRateMeta();
+  elements.refreshExchangeRate.disabled = state.exchangeLoading;
+}
+
+function parseBcraUsdQuote(payload) {
+  const results = Array.isArray(payload?.results) ? payload.results : payload?.results ? [payload.results] : [];
+  for (const result of results) {
+    const details = Array.isArray(result?.detalle) ? result.detalle : result?.detalle ? [result.detalle] : [];
+    const usd = details.find(detail => detail?.codigoMoneda === 'USD') || details[0];
+    const rate = Number(usd?.tipoCotizacion);
+    if (Number.isFinite(rate) && rate > 0) {
+      return { rate, quoteDate: isValidDate(result?.fecha) ? result.fecha : todayString() };
+    }
+  }
+  return null;
+}
+
+function isDialogOpen(dialog) {
+  return Boolean(dialog?.open || dialog?.hasAttribute('open'));
+}
+
+async function refreshExchangeRate({ quiet = false } = {}) {
+  if (state.exchangeLoading) return;
+  state.exchangeLoading = true;
+  state.exchangeError = '';
+  renderExchangeRateControl();
+  try {
+    const response = await fetch(BCRA_USD_ENDPOINT, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`BCRA respondió ${response.status}`);
+    const quote = parseBcraUsdQuote(await response.json());
+    if (!quote) throw new Error('La respuesta del BCRA no incluyó una cotización de USD válida');
+    state.exchangeRate = {
+      rate: quote.rate,
+      quoteDate: quote.quoteDate,
+      fetchedAt: new Date().toISOString(),
+      source: 'BCRA'
+    };
+    if (!saveExchangeRate(state.exchangeRate)) setStatus('Cotización actualizada, pero no se pudo guardar localmente', 'error');
+    else if (!quiet) setStatus('Cotización oficial actualizada', 'saved');
+  } catch (_) {
+    state.exchangeError = hasExchangeRate()
+      ? 'No se pudo actualizar la cotización oficial'
+      : 'No se pudo obtener la cotización oficial';
+    if (!quiet) setStatus(hasExchangeRate() ? 'No pude actualizar; uso la última cotización guardada' : state.exchangeError, 'error');
+  } finally {
+    state.exchangeLoading = false;
+    renderExchangeRateControl();
+    if (!isDialogOpen(elements.sourceDialog) && !isDialogOpen(elements.hourDialog) && !isDialogOpen(elements.importDialog)) render();
+  }
 }
 
 function amountClass(value) {
@@ -300,16 +419,20 @@ function typeBadge(type) {
   return `<span class="type-badge ${escapeHtml(type)}">${escapeHtml(SOURCE_TYPES[type])}</span>`;
 }
 
+function currencyBadge(currency) {
+  return `<span class="badge currency" title="${escapeHtml(currencyName(currency))}">${escapeHtml(currency)}</span>`;
+}
+
 function sourceTitle(source) {
   return source.name || 'Sin nombre';
 }
 
 function sourcePeriodLabel(source, expected) {
-  if (source.type === 'saas') return `MRR ${money.format(expected)}`;
-  if (source.type === 'project') return `Proyecto ${money.format(source.amount)}`;
-  if (source.type === 'hours') return `${number.format(source.estimatedHours)} h × ${money.format(source.amount)}`;
-  if (source.billingCycle === 'once') return `Extra ${money.format(source.amount)}`;
-  return `${BILLING_CYCLES[source.billingCycle]} · ${money.format(expected)}`;
+  if (source.type === 'saas') return `MRR ${formatCurrency(expected, source.currency)}`;
+  if (source.type === 'project') return `Proyecto ${formatCurrency(source.amount, source.currency)}`;
+  if (source.type === 'hours') return `${number.format(source.estimatedHours)} h × ${formatCurrency(source.amount, source.currency)}`;
+  if (source.billingCycle === 'once') return `Extra ${formatCurrency(source.amount, source.currency)}`;
+  return `${BILLING_CYCLES[source.billingCycle]} · ${formatCurrency(expected, source.currency)}`;
 }
 
 function meetsFilter(source) {
@@ -323,6 +446,8 @@ function renderSourceCard(source, compactCard = false) {
   const payment = getPaymentForPeriod(source, state.period);
   const collected = collectedAmount(expected, payment);
   const visibleExpected = expected || source.amount;
+  const convertedExpected = arsConversionLabel(expected, source.currency);
+  const convertedCollected = arsConversionLabel(collected, source.currency);
   const projectDate = source.expectedDate ? `<span class="meta-item">${formatDate(source.expectedDate)}</span>` : '';
   const clientMetric = source.type === 'saas' && source.clients > 0
     ? `<span class="meta-item">${number.format(source.clients)} ${source.clients === 1 ? 'cliente' : 'clientes'}</span>`
@@ -331,7 +456,7 @@ function renderSourceCard(source, compactCard = false) {
   return `
     <article class="income-card ${compactCard ? 'compact' : ''}" data-source-card="${escapeHtml(source.id)}">
       <div class="card-topline">
-        ${typeBadge(source.type)}
+        <span class="badge-group">${typeBadge(source.type)}${currencyBadge(source.currency)}</span>
         <div class="badge-group">${projectBadge(source.projectStatus)}${paymentBadge(payment)}</div>
       </div>
       <div class="card-heading">
@@ -339,7 +464,7 @@ function renderSourceCard(source, compactCard = false) {
           <h3>${escapeHtml(sourceTitle(source))}</h3>
           <p>${escapeHtml(sourcePeriodLabel(source, visibleExpected))}</p>
         </div>
-        <strong class="card-amount ${amountClass(expected)}">${money.format(expected)}</strong>
+        <div class="card-amount-wrap"><strong class="card-amount ${amountClass(expected)}">${formatCurrency(expected, source.currency)}</strong>${source.currency === 'USD' ? `<span class="card-amount-secondary">${escapeHtml(convertedExpected)}</span>` : ''}</div>
       </div>
       <div class="card-meta">
         ${clientMetric}
@@ -347,7 +472,7 @@ function renderSourceCard(source, compactCard = false) {
         ${source.notes ? `<span class="meta-item note-preview">${escapeHtml(source.notes)}</span>` : ''}
       </div>
       <div class="card-footer">
-        <span>${payment.status === 'partial' ? `Cobrado ${money.format(collected)}` : payment.status === 'paid' ? 'Cobro registrado' : 'Sin cobro registrado'}</span>
+        <span>${payment.status === 'partial' || payment.status === 'paid' ? `Cobrado ${formatCurrency(collected, source.currency)}${convertedCollected ? ` · ${convertedCollected}` : ''}` : 'Sin cobro registrado'}</span>
         <span class="card-actions">
           ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer" class="mini-link">Abrir</a>` : ''}
           <button class="text-button" type="button" data-action="edit-source" data-id="${escapeHtml(source.id)}">Editar</button>
@@ -377,6 +502,9 @@ function renderTrackerWidget({ large = false } = {}) {
   const tracker = currentTracker();
   const payment = currentTrackerPayment();
   const collected = collectedAmount(tracker.total, payment);
+  const currency = state.settings.rateCurrency;
+  const convertedTotal = arsConversionLabel(tracker.total, currency);
+  const convertedCollected = arsConversionLabel(collected, currency);
   return `
     <article class="tracker-widget ${large ? 'large' : ''}">
       <div class="section-kicker">Servicios por hora</div>
@@ -390,10 +518,10 @@ function renderTrackerWidget({ large = false } = {}) {
       <div class="tracker-numbers">
         <div><span>Horas reales</span><b>${number.format(tracker.real)} h</b></div>
         <div><span>Horas a pagar</span><b>${number.format(tracker.payable)} h</b></div>
-        <div><span>Total</span><b>${money.format(tracker.total)}</b></div>
+        <div><span>Total · ${currency}</span><span class="currency-value"><b>${formatCurrency(tracker.total, currency)}</b>${currency === 'USD' ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
       </div>
       <div class="tracker-footer">
-        <span>${payment.status === 'partial' ? `Cobrado ${money.format(collected)}` : payment.status === 'paid' ? 'Cobro completo registrado' : 'Pendiente de cobro'}</span>
+        <span>${payment.status === 'partial' || payment.status === 'paid' ? `Cobrado ${formatCurrency(collected, currency)}${convertedCollected ? ` · ${convertedCollected}` : ''}` : 'Pendiente de cobro'}</span>
         <button class="btn small" type="button" data-action="go-hours">Abrir tracker</button>
       </div>
     </article>`;
@@ -403,22 +531,24 @@ function renderCollectionCard(metrics) {
   const percentage = metrics.total > 0 ? Math.round((metrics.collected / metrics.total) * 100) : 0;
   return `
     <article class="collection-card">
-      <div class="section-kicker">Cobros del período</div>
+      <div class="section-kicker">Cobros del período · ARS</div>
       <div class="collection-amounts">
         <div><span>Cobrado</span><strong>${money.format(metrics.collected)}</strong></div>
         <div><span>Pendiente</span><strong>${money.format(metrics.pending)}</strong></div>
       </div>
       <div class="collection-bar" role="progressbar" aria-label="Cobrado del período" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percentage}"><span style="width:${percentage}%"></span></div>
-      <p>${percentage}% del ingreso estimado está cobrado.</p>
+      <p>${percentage}% del ingreso estimado consolidado está cobrado.</p>
+      ${metrics.unconvertedUsd ? `<p class="conversion-warning">Hay ${metrics.unconvertedUsd} ${metrics.unconvertedUsd === 1 ? 'importe en USD sin cotización' : 'importes en USD sin cotización'}; no se incluye en este total.</p>` : ''}
     </article>`;
 }
 
 function renderKpis(metrics) {
+  const rateNote = hasExchangeRate() ? 'USD convertido con BCRA' : 'Consolidado en ARS';
   return `
     <section class="kpi-grid" aria-label="Resumen financiero">
-      <article class="kpi-card accent animate-in" style="--delay:40ms"><span>MRR activo</span><strong>${money.format(metrics.mrr)}</strong><small>Suscripciones activas</small></article>
-      <article class="kpi-card animate-in" style="--delay:90ms"><span>Desarrollos puntuales</span><strong>${money.format(metrics.projects)}</strong><small>Proyectado en ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</small></article>
-      <article class="kpi-card total animate-in" style="--delay:140ms"><span>Ingreso estimado</span><strong>${money.format(metrics.total)}</strong><small>${formatMonth()}</small></article>
+      <article class="kpi-card accent animate-in" style="--delay:40ms"><span>MRR activo · ARS</span><strong>${money.format(metrics.mrr)}</strong><small>${rateNote}</small></article>
+      <article class="kpi-card animate-in" style="--delay:90ms"><span>Desarrollos puntuales · ARS</span><strong>${money.format(metrics.projects)}</strong><small>Proyectado en ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</small></article>
+      <article class="kpi-card total animate-in" style="--delay:140ms"><span>Ingreso estimado · ARS</span><strong>${money.format(metrics.total)}</strong><small>${formatMonth()} · ${rateNote}</small></article>
       <article class="kpi-card animate-in" style="--delay:190ms"><span>Apps y proyectos activos</span><strong>${number.format(metrics.active)}</strong><small>Sin contar pausados</small></article>
     </section>`;
 }
@@ -504,6 +634,8 @@ function renderCalendar() {
 function renderHours() {
   const tracker = currentTracker();
   const payment = currentTrackerPayment();
+  const currency = state.settings.rateCurrency;
+  const convertedTotal = arsConversionLabel(tracker.total, currency);
   return `
     <section class="page-heading">
       <div><p class="eyebrow">Módulo integrado</p><h1>Tracker de horas & servicios</h1><p class="lede">El contador original sigue acá y aporta automáticamente al estimado mensual del Hub.</p></div>
@@ -517,17 +649,17 @@ function renderHours() {
         <label>Estado
           <select name="status">${Object.entries(PAYMENT_STATES).map(([value, label]) => `<option value="${value}" ${payment.status === value ? 'selected' : ''}>${label}</option>`).join('')}</select>
         </label>
-        <label>Monto cobrado
+        <label>Monto cobrado (${currency})
           <input name="paidAmount" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(payment.paidAmount))}" placeholder="0">
         </label>
-        <p class="note">Total de horas a cobrar: <strong>${money.format(tracker.total)}</strong></p>
+        <p class="note">Total de horas a cobrar: <strong>${formatCurrency(tracker.total, currency)}</strong>${currency === 'USD' ? ` <span class="conversion-note">${escapeHtml(convertedTotal)}</span>` : ''}</p>
         <button class="btn primary" type="submit">Guardar cobro</button>
       </form>
     </section>
     <section class="calendar-panel">
       <div class="calendar-toolbar">
         <div><p class="section-kicker">${formatMonth()}</p><h2>Registro diario</h2></div>
-        <label class="rate-field">Valor hora <input id="rateInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(state.settings.rate))}" placeholder="0"></label>
+        <label class="rate-field">Valor hora <span class="rate-inputs"><input id="rateInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(state.settings.rate))}" placeholder="0"><select id="rateCurrency" aria-label="Moneda de la tarifa por hora"><option value="ARS" ${currency === 'ARS' ? 'selected' : ''}>ARS</option><option value="USD" ${currency === 'USD' ? 'selected' : ''}>USD</option></select></span></label>
       </div>
       <div class="mode-tabs" role="group" aria-label="Modo del calendario">
         <button type="button" data-action="mode" data-mode="work" aria-pressed="${state.mode === 'work'}">Trabajé</button>
@@ -537,7 +669,7 @@ function renderHours() {
       <p class="hint">${state.mode === 'work' ? 'Tocá un día para cargarlo; si no tiene horas por defecto, podés elegirlas.' : state.mode === 'holiday' ? 'Marcá los feriados que deban contar con multiplicador.' : 'Elegí un día para editar sus horas o su feriado.'}</p>
       <div class="weekdays" aria-hidden="true"><span>Lu</span><span>Ma</span><span>Mi</span><span>Ju</span><span>Vi</span><span>Sá</span><span>Do</span></div>
       <div class="calendar-grid">${renderCalendar()}</div>
-      <div class="calendar-total"><span>${tracker.days} días · ${number.format(tracker.real)} h reales · ${number.format(tracker.payable)} h a pagar</span><strong>${money.format(tracker.total)}</strong></div>
+      <div class="calendar-total"><span>${tracker.days} días · ${number.format(tracker.real)} h reales · ${number.format(tracker.payable)} h a pagar</span><span class="currency-value"><strong>${formatCurrency(tracker.total, currency)}</strong>${currency === 'USD' ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
     </section>
     <section class="module-section">
       <div class="section-header"><div><p class="section-kicker">Freelance</p><h2>Servicios por hora planificados</h2></div><button type="button" class="text-button" data-action="new-source" data-type="hours">Agregar servicio</button></div>
@@ -550,7 +682,7 @@ function renderSettings() {
   const names = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
   return `
     <section class="page-heading compact-heading">
-      <div><p class="eyebrow">Configuración</p><h1>Ajustes & copias</h1><p class="lede">Personalizá las horas por defecto y guardá una copia de tus registros.</p></div>
+      <div><p class="eyebrow">Configuración</p><h1>Ajustes & copias</h1><p class="lede">Personalizá las horas, revisá la cotización USD y guardá una copia de tus registros.</p></div>
     </section>
     <section class="settings-layout">
       <form class="settings-card" id="hoursDefaultsForm">
@@ -571,9 +703,11 @@ function renderSettings() {
         <div class="button-row"><button class="btn primary" type="button" data-action="export-backup">Descargar backup</button><button class="btn" type="button" data-action="import-backup">Importar backup</button></div>
       </section>
       <section class="settings-card">
-        <p class="section-kicker">Datos cargados</p>
-        <h2>${state.sources.length} fuentes de ingreso</h2>
-        <p class="note">Podés editar, pausar o eliminar cualquier fuente desde su tarjeta. Los datos del Hub no salen de tu dispositivo.</p>
+        <p class="section-kicker">Conversión automática</p>
+        <h2>${hasExchangeRate() ? `1 USD = ${money.format(state.exchangeRate.rate)}` : 'Sin cotización USD'}</h2>
+        <p class="note">Fuente: BCRA · ${exchangeRateMeta()}. Los montos en USD se conservan en su moneda y el Hub los consolida en ARS.</p>
+        <div class="button-row"><button class="btn" type="button" data-action="refresh-exchange-rate" ${state.exchangeLoading ? 'disabled' : ''}>${state.exchangeLoading ? 'Actualizando…' : 'Actualizar cotización'}</button></div>
+        <p class="note">${state.sources.length} fuentes de ingreso guardadas en este dispositivo.</p>
       </section>
     </section>`;
 }
@@ -583,6 +717,7 @@ function render() {
   elements.periodInput.value = state.period;
   elements.periodLabel.textContent = formatMonth();
   elements.status.textContent = state.status;
+  renderExchangeRateControl();
   elements.activeSectionLabel.textContent = ROUTES[state.route];
   elements.nav.querySelectorAll('button[data-route]').forEach(button => {
     button.setAttribute('aria-current', button.dataset.route === state.route ? 'page' : 'false');
@@ -643,14 +778,24 @@ function sourceFormFields() {
 function updateSourceFormUI() {
   const fields = sourceFormFields();
   const type = fields.type.value;
+  const currency = fields.currency.value;
   const isSaas = type === 'saas';
   const isProject = type === 'project';
   const isHours = type === 'hours';
-  $('#sourceAmountLabel').textContent = isSaas ? 'MRR / monto por ciclo' : isProject ? 'Precio total acordado' : isHours ? 'Tarifa por hora' : 'Monto por ciclo o extra';
+  const amountLabel = isSaas ? 'MRR / monto por ciclo' : isProject ? 'Precio total acordado' : isHours ? 'Tarifa por hora' : 'Monto por ciclo o extra';
+  $('#sourceAmountLabel').textContent = `${amountLabel} (${currency})`;
+  $('#sourcePaidAmountLabel').textContent = `Monto ya cobrado (${currency})`;
   $('#sourceCycleWrap').hidden = isProject || isHours;
   $('#sourceClientsWrap').hidden = !isSaas;
   $('#sourceHoursWrap').hidden = !isHours;
   $('#sourceDateLabel').textContent = isProject ? 'Fecha estimada de entrega / cobro' : 'Fecha estimada de cobro';
+  const currencyHint = $('#sourceCurrencyHint');
+  currencyHint.hidden = currency !== 'USD';
+  if (currency === 'USD') {
+    currencyHint.textContent = hasExchangeRate()
+      ? `Se mostrará en ARS con la referencia BCRA: 1 USD = ${money.format(state.exchangeRate.rate)} (${state.exchangeRate.quoteDate ? `publicada ${formatDate(state.exchangeRate.quoteDate)}` : 'última disponible'}).`
+      : 'El importe queda guardado en USD. La conversión a ARS aparecerá al obtener una cotización oficial del BCRA.';
+  }
   if (isProject) fields.billingCycle.value = 'once';
   else if (isHours || fields.billingCycle.value === 'once') fields.billingCycle.value = 'monthly';
 }
@@ -669,6 +814,7 @@ function openSourceModal(id = '', type = '') {
   fields.name.value = initial.name;
   fields.type.value = initial.type;
   fields.amount.value = formatInputNumber(initial.amount);
+  fields.currency.value = initial.currency;
   fields.billingCycle.value = initial.billingCycle;
   fields.clients.value = initial.clients || '';
   fields.estimatedHours.value = initial.estimatedHours || '';
@@ -714,6 +860,7 @@ function onSourceSubmit(event) {
     name: fields.name.value,
     type: fields.type.value,
     amount,
+    currency: fields.currency.value,
     billingCycle: fields.type.value === 'project' ? 'once' : fields.type.value === 'hours' ? 'monthly' : fields.billingCycle.value,
     clients,
     estimatedHours,
@@ -819,6 +966,13 @@ function updateRate(input) {
   render();
 }
 
+function updateRateCurrency(input) {
+  if (!CURRENCIES[input.value]) return;
+  state.settings.rateCurrency = input.value;
+  persist(saveSettings(state.settings));
+  render();
+}
+
 function updateDefaults(form) {
   let changed = false;
   form.querySelectorAll('input[data-dow]').forEach(input => {
@@ -841,7 +995,7 @@ function updateDefaults(form) {
 }
 
 function buildBackupFile() {
-  return JSON.stringify(exportBackup(state.settings, state.months, state.sources, state.trackerPayments), null, 2);
+  return JSON.stringify(exportBackup(state.settings, state.months, state.sources, state.trackerPayments, state.exchangeRate), null, 2);
 }
 
 function downloadBackup() {
@@ -891,12 +1045,14 @@ function applyImport() {
   state.settings = applyImportedSettings(state.settings, backup.settings);
   state.sources = backup.sources;
   state.trackerPayments = backup.trackerPayments;
+  if (backup.exchangeRate) state.exchangeRate = backup.exchangeRate;
   const settingsSaved = saveSettings(state.settings);
   const sourcesSaved = saveSources(state.sources);
   const paymentsSaved = saveTrackerPayments(state.trackerPayments);
+  const exchangeRateSaved = !backup.exchangeRate || saveExchangeRate(state.exchangeRate);
   state.pendingImport = null;
   closeDialog(elements.importDialog);
-  persist(settingsSaved && sourcesSaved && paymentsSaved);
+  persist(settingsSaved && sourcesSaved && paymentsSaved && exchangeRateSaved);
   render();
 }
 
@@ -908,6 +1064,7 @@ function handleAction(action, target) {
     case 'go-hours': setRoute('hours'); break;
     case 'day': onDay(target.dataset.date); break;
     case 'mode': state.mode = target.dataset.mode; render(); break;
+    case 'refresh-exchange-rate': refreshExchangeRate(); break;
     case 'export-backup': downloadBackup(); break;
     case 'import-backup': chooseImport(); break;
     default: break;
@@ -933,6 +1090,7 @@ elements.nav.addEventListener('click', event => {
 });
 
 elements.addSource.addEventListener('click', () => openSourceModal());
+elements.refreshExchangeRate.addEventListener('click', () => refreshExchangeRate());
 elements.periodInput.addEventListener('change', event => changePeriod(event.target.value));
 $('#prevPeriod').addEventListener('click', () => changePeriod(shiftMonth(state.period, -1)));
 $('#nextPeriod').addEventListener('click', () => changePeriod(shiftMonth(state.period, 1)));
@@ -951,6 +1109,7 @@ elements.view.addEventListener('click', event => {
 
 elements.view.addEventListener('change', event => {
   if (event.target.id === 'rateInput') updateRate(event.target);
+  if (event.target.id === 'rateCurrency') updateRateCurrency(event.target);
 });
 
 elements.view.addEventListener('submit', event => {
@@ -967,6 +1126,7 @@ elements.view.addEventListener('focusout', event => {
 
 elements.sourceForm.addEventListener('submit', onSourceSubmit);
 elements.sourceForm.elements.type.addEventListener('change', updateSourceFormUI);
+elements.sourceForm.elements.currency.addEventListener('change', updateSourceFormUI);
 elements.deleteSource.addEventListener('click', () => removeSource(elements.sourceForm.elements.id.value));
 elements.closeSource.addEventListener('click', () => closeDialog(elements.sourceDialog));
 $('#cancelSource').addEventListener('click', () => closeDialog(elements.sourceDialog));
@@ -1016,3 +1176,4 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 ensureMonth();
 render();
 applySidebarState();
+if (exchangeRateIsStale()) refreshExchangeRate({ quiet: hasExchangeRate() });

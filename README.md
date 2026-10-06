@@ -12,12 +12,15 @@ La app funciona como PWA: se puede instalar en el celular y queda disponible sin
 - **Desarrollos puntuales:** presupuesto, fecha estimada, estado del proyecto y cobro parcial o total.
 - **Tracker de horas integrado:** conserva el calendario de horas y suma automáticamente su total al Hub.
 - **Ingresos fijos o extras:** cargos recurrentes o pagos únicos.
+- **Montos en ARS o USD:** cada fuente y la tarifa del tracker puede cargarse en su moneda original; el Hub consolida en pesos argentinos con la última cotización USD publicada por el BCRA.
 - **Histórico mensual:** elegí el período con las flechas o el selector de mes.
 - **Backup:** descarga e importa los datos completos del Hub y del tracker.
 
 ## Tus datos
 
-Todo se guarda localmente en el dispositivo y no se envía a ningún servidor. Los registros de horas de la versión anterior se conservan automáticamente al abrir esta versión.
+Tus datos financieros se guardan localmente en el dispositivo y no se envían a ningún servidor. Solo se consulta la cotización pública del BCRA, sin transmitir tus ingresos, proyectos ni horas. Los registros de horas de la versión anterior se conservan automáticamente al abrir esta versión.
+
+Para convertir USD, la app consulta la API pública de Estadísticas Cambiarias del BCRA y conserva la última cotización disponible para seguir mostrando conversiones sin conexión. La interfaz siempre muestra la fecha de publicación y actualización de la referencia usada.
 
 Hacé una copia de seguridad antes de borrar los datos del navegador o cambiar de teléfono. Los backups nuevos incluyen fuentes de ingreso y estados de cobro, y la importación sigue aceptando backups anteriores del contador de horas.
 
