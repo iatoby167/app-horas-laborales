@@ -115,9 +115,7 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
   box-shadow: 0 8px 24px rgb(0 0 0 / .06);
   backdrop-filter: blur(16px);
 }
-.main-nav { display: flex; gap: 3px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.main-nav::-webkit-scrollbar { display: none; }
-.main-nav button, .filter-control button, .mode-tabs button {
+.filter-control button, .mode-tabs button {
   min-height: 38px;
   padding: 0 12px;
   border: 0;
@@ -127,7 +125,7 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
   font-weight: 650;
   white-space: nowrap;
 }
-.main-nav button[aria-current="page"], .filter-control button[aria-pressed="true"], .mode-tabs button[aria-pressed="true"] {
+.filter-control button[aria-pressed="true"], .mode-tabs button[aria-pressed="true"] {
   background: var(--surface-2);
   color: var(--ink);
 }
@@ -315,7 +313,6 @@ dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
   .app-topbar { align-items: flex-start; }
   .top-actions { flex-direction: column-reverse; align-items: flex-end; gap: 6px; }
   .controlbar { display: flex; flex-wrap: wrap; gap: 8px; }
-  .main-nav { order: 1; flex: 1 1 100%; }
   .period-control { order: 2; }
   .filter-control { order: 3; margin-left: auto; }
   .dashboard-hero, .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
@@ -359,29 +356,278 @@ dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* Shell del Hub: la navegación vive fuera del contenido para conservar cada
+   módulo independiente y poder mostrarla como drawer o como panel fijado. */
+:root {
+  --sidebar-expanded: 272px;
+  --sidebar-collapsed: 80px;
+  --motion-out: cubic-bezier(.22, 1, .36, 1);
+  --motion-in: cubic-bezier(.4, 0, 1, 1);
+}
+
+body { min-height: 100vh; overflow-x: hidden; }
+body.drawer-open { overflow: hidden; }
+.app-frame { min-height: 100vh; }
+.app-shell { transition: width .42s var(--motion-out), margin .42s var(--motion-out); }
+.topbar-identity { display: flex; align-items: center; min-width: 0; gap: 11px; }
+.menu-toggle, .sidebar-icon-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--ink);
+  box-shadow: 0 4px 13px rgb(10 30 20 / .05);
+  transition: transform .2s var(--motion-out), background .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.menu-toggle svg, .sidebar-icon-button svg, .sidebar-nav-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.menu-toggle svg { width: 21px; height: 21px; }
+
+.app-sidebar {
+  position: fixed;
+  z-index: 40;
+  top: max(14px, env(safe-area-inset-top, 0px));
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  left: 14px;
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-expanded);
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: 0 24px 70px rgb(10 30 20 / .22);
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(-100% - 34px)) scale(.985);
+  visibility: hidden;
+  transition: transform .42s var(--motion-out), opacity .24s ease, visibility 0s linear .42s, width .3s var(--motion-out);
+}
+.sidebar-open .app-sidebar {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0) scale(1);
+  transition: transform .42s var(--motion-out), opacity .24s ease, width .3s var(--motion-out);
+}
+.sidebar-scrim {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgb(9 20 14 / .38);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .28s ease, visibility 0s linear .28s;
+  visibility: hidden;
+  backdrop-filter: blur(2px);
+}
+.sidebar-open:not(.sidebar-pinned) .sidebar-scrim {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition: opacity .28s ease;
+}
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; padding: 2px 3px 15px; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.sidebar-brand { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.sidebar-brand-mark { display: grid; place-items: center; flex: none; width: 33px; height: 33px; border-radius: 11px; background: var(--accent); color: var(--on-accent); font: 700 19px/1 var(--font-display); box-shadow: 0 6px 15px color-mix(in srgb, var(--accent) 31%, transparent); }
+.sidebar-brand-copy { display: grid; min-width: 0; line-height: 1.05; }
+.sidebar-brand-copy strong { font: 720 15px var(--font-display); letter-spacing: -.02em; }
+.sidebar-brand-copy small { margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.sidebar-actions { display: flex; align-items: center; gap: 4px; }
+.sidebar-icon-button { width: 32px; height: 32px; border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); }
+.sidebar-icon-button svg { width: 17px; height: 17px; }
+.sidebar-pinned .pin-sidebar, .sidebar-compact .collapse-sidebar { color: var(--accent); background: var(--accent-soft); }
+.sidebar-compact .collapse-sidebar svg { transform: rotate(180deg); }
+
+.sidebar-nav { display: grid; align-content: start; gap: 5px; flex: 1; overflow-y: auto; padding: 18px 0; scrollbar-width: thin; }
+.sidebar-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 49px;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  transition: background .2s ease, color .2s ease, border-color .2s ease, transform .2s var(--motion-out), box-shadow .2s ease;
+}
+.sidebar-nav-item::before { position: absolute; left: -13px; width: 3px; height: 22px; border-radius: 0 999px 999px 0; background: var(--accent); content: ''; opacity: 0; transform: scaleY(.55); transition: opacity .2s ease, transform .24s var(--motion-out); }
+.sidebar-nav-item[aria-current="page"] { border-color: color-mix(in srgb, var(--accent) 23%, var(--line)); background: color-mix(in srgb, var(--accent-soft) 78%, transparent); color: var(--accent); box-shadow: 0 5px 15px color-mix(in srgb, var(--accent) 9%, transparent); }
+.sidebar-nav-item[aria-current="page"]::before { opacity: 1; transform: scaleY(1); }
+.sidebar-nav-icon { display: grid; place-items: center; flex: none; width: 23px; }
+.sidebar-nav-label { display: grid; min-width: 0; font-size: 13px; font-weight: 730; line-height: 1.1; }
+.sidebar-nav-label em { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 10px; font-style: normal; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-footer { display: grid; gap: 12px; padding: 13px 3px 3px; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.sidebar-new-source { display: flex; align-items: center; justify-content: center; min-height: 40px; gap: 7px; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent); color: var(--on-accent); font-weight: 750; transition: transform .2s var(--motion-out), box-shadow .2s ease, filter .2s ease; }
+.sidebar-new-source > span:first-child { font: 500 21px/1 var(--font-data); }
+.sidebar-new-text { font-size: 13px; white-space: nowrap; }
+.sidebar-storage { display: flex; align-items: center; min-height: 18px; gap: 7px; padding: 0 4px; overflow: hidden; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.sidebar-storage-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent); }
+
+.view-context { display: grid; align-content: center; min-width: 0; }
+.view-context span { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+.view-context strong { overflow: hidden; margin-top: 1px; font: 700 15px var(--font-display); letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.controlbar { grid-template-columns: minmax(136px, 1fr) auto auto; }
+
+#view > .page { animation: page-enter .46s var(--motion-out) both; }
+.animate-in { animation: fade-up .5s var(--motion-out) both; animation-delay: var(--delay, 0ms); }
+.page .card-grid > .income-card, .page .catalog-grid > .income-card, .page .stack-list > .income-card { animation: fade-up .46s var(--motion-out) both; }
+.page .card-grid > .income-card:nth-child(1), .page .catalog-grid > .income-card:nth-child(1), .page .stack-list > .income-card:nth-child(1) { animation-delay: 90ms; }
+.page .card-grid > .income-card:nth-child(2), .page .catalog-grid > .income-card:nth-child(2), .page .stack-list > .income-card:nth-child(2) { animation-delay: 140ms; }
+.page .card-grid > .income-card:nth-child(3), .page .catalog-grid > .income-card:nth-child(3), .page .stack-list > .income-card:nth-child(3) { animation-delay: 190ms; }
+.page .card-grid > .income-card:nth-child(4), .page .catalog-grid > .income-card:nth-child(4), .page .stack-list > .income-card:nth-child(4) { animation-delay: 240ms; }
+.page .card-grid > .income-card:nth-child(n + 5), .page .catalog-grid > .income-card:nth-child(n + 5), .page .stack-list > .income-card:nth-child(n + 5) { animation-delay: 280ms; }
+.kpi-card, .collection-card, .tracker-widget, .income-card, .payment-panel, .calendar-panel, .settings-card { transition: transform .24s var(--motion-out), box-shadow .24s ease, border-color .24s ease, background .24s ease; }
+.kpi-card, .collection-card, .tracker-widget, .payment-panel, .calendar-panel, .settings-card { box-shadow: 0 5px 16px rgb(9 30 19 / .035); }
+.collection-bar span { transition: width .65s var(--motion-out); }
+.btn, .icon-button, .today-button, .filter-control button, .mode-tabs button, .text-button { transition: transform .2s var(--motion-out), box-shadow .2s ease, background .2s ease, border-color .2s ease, color .2s ease, filter .2s ease; }
+.dialog-content { animation: modal-content-in .28s var(--motion-out) both; }
+dialog { background: color-mix(in srgb, var(--surface) 93%, transparent); backdrop-filter: blur(22px) saturate(1.12); -webkit-backdrop-filter: blur(22px) saturate(1.12); }
+dialog[open] { animation: modal-in .28s var(--motion-out) both; }
+dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
+.payment-panel select, .payment-panel input, .dialog-grid input, .dialog-grid select, .dialog-grid textarea, .settings-card input { transition: border-color .18s ease, box-shadow .18s ease, background .18s ease; }
+.payment-panel select:focus, .payment-panel input:focus, .dialog-grid input:focus, .dialog-grid select:focus, .dialog-grid textarea:focus, .settings-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+@media (hover: hover) {
+  .menu-toggle:hover, .sidebar-icon-button:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--surface-2); transform: translateY(-1px); box-shadow: 0 7px 16px rgb(9 30 19 / .09); }
+  .sidebar-nav-item:hover:not([aria-current="page"]) { background: color-mix(in srgb, var(--surface-2) 82%, transparent); color: var(--ink); transform: translateX(2px); }
+  .sidebar-new-source:hover { filter: brightness(1.05); transform: translateY(-2px); box-shadow: 0 9px 20px color-mix(in srgb, var(--accent) 26%, transparent); }
+  .kpi-card:hover, .collection-card:hover, .tracker-widget:hover, .payment-panel:hover, .calendar-panel:hover, .settings-card:hover { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); transform: translateY(-2px); box-shadow: 0 13px 28px rgb(9 30 19 / .09); }
+  .income-card:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); transform: translateY(-3px); box-shadow: 0 14px 28px rgb(9 30 19 / .1); }
+  .btn:hover, .icon-button:hover, .today-button:hover { filter: none; transform: translateY(-1px); box-shadow: 0 7px 14px rgb(9 30 19 / .1); }
+  .btn.primary:hover { box-shadow: 0 9px 19px color-mix(in srgb, var(--accent) 28%, transparent); }
+}
+
+@media (min-width: 1024px) {
+  .sidebar-pinned .app-sidebar { visibility: visible; opacity: 1; pointer-events: auto; transform: translateX(0) scale(1); transition: width .3s var(--motion-out), transform .42s var(--motion-out), opacity .24s ease; }
+  .sidebar-pinned .close-sidebar { display: none; }
+  .sidebar-pinned .app-shell { width: min(calc(100% - var(--sidebar-expanded) - 44px), 88rem); margin-right: 22px; margin-left: auto; }
+  .sidebar-pinned.sidebar-compact .app-sidebar { width: var(--sidebar-collapsed); }
+  .sidebar-pinned.sidebar-compact .app-shell { width: min(calc(100% - var(--sidebar-collapsed) - 44px), 88rem); }
+  .sidebar-pinned.sidebar-compact .sidebar-header { justify-content: center; }
+  .sidebar-pinned.sidebar-compact .sidebar-brand-copy, .sidebar-pinned.sidebar-compact .pin-sidebar, .sidebar-pinned.sidebar-compact .close-sidebar, .sidebar-pinned.sidebar-compact .sidebar-nav-label, .sidebar-pinned.sidebar-compact .sidebar-new-text, .sidebar-pinned.sidebar-compact .sidebar-storage-text { display: none; }
+  .sidebar-pinned.sidebar-compact .sidebar-actions { position: absolute; top: 62px; z-index: 1; }
+  .sidebar-pinned.sidebar-compact .sidebar-nav { padding-top: 51px; }
+  .sidebar-pinned.sidebar-compact .sidebar-nav-item { justify-content: center; padding-inline: 8px; }
+  .sidebar-pinned.sidebar-compact .sidebar-nav-item::before { left: -13px; }
+  .sidebar-pinned.sidebar-compact .sidebar-footer { justify-items: center; }
+  .sidebar-pinned.sidebar-compact .sidebar-new-source { width: 40px; padding: 0; }
+  .sidebar-pinned.sidebar-compact .sidebar-storage { padding: 0; }
+}
+
+@media (max-width: 1080px) {
+  .controlbar { grid-template-columns: 1fr auto; }
+  .view-context { display: none; }
+  .filter-control { grid-column: 1 / -1; width: max-content; }
+}
+
+@media (max-width: 1023px) {
+  .pin-sidebar, .collapse-sidebar { display: none; }
+}
+
+@media (max-width: 760px) {
+  .app-sidebar { top: 10px; bottom: 10px; left: 10px; width: min(278px, calc(100vw - 20px)); border-radius: 21px; }
+  .controlbar { display: grid; grid-template-columns: 1fr; gap: 9px; }
+  .period-control { justify-self: center; }
+  .filter-control { grid-column: auto; width: 100%; justify-content: space-between; }
+  .filter-control button { flex: 1; }
+}
+
+@keyframes page-enter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes modal-content-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell, .app-sidebar, .sidebar-scrim, #view > .page, .animate-in, dialog[open], .dialog-content { animation: none !important; transition: none !important; }
+}
 </style>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="app-topbar">
-      <div class="brand-block">
-        <span class="brand">Libreta de horas</span>
-        <span class="brand-subtitle">Hub central de ingresos</span>
+  <div class="app-frame">
+    <aside class="app-sidebar" id="appSidebar" aria-label="Navegación principal" aria-hidden="true">
+      <div class="sidebar-header">
+        <div class="sidebar-brand" aria-label="Libreta de horas, Hub central de ingresos">
+          <span class="sidebar-brand-mark" aria-hidden="true">$</span>
+          <span class="sidebar-brand-copy"><strong>Libreta</strong><small>Hub de ingresos</small></span>
+        </div>
+        <div class="sidebar-actions">
+          <button id="pinSidebar" class="sidebar-icon-button pin-sidebar" type="button" aria-label="Fijar barra lateral" aria-pressed="false" title="Fijar barra lateral">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4 8 0m-7 0 0 5-3 3v2h12v-2l-3-3V4m-3 10v6"/></svg>
+          </button>
+          <button id="collapseSidebar" class="sidebar-icon-button collapse-sidebar" type="button" aria-label="Mostrar solo íconos" aria-pressed="false" title="Mostrar solo íconos">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5 3 12l5 7M3 12h18"/></svg>
+          </button>
+          <button id="closeSidebar" class="sidebar-icon-button close-sidebar" type="button" aria-label="Cerrar menú">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
       </div>
-      <div class="top-actions">
-        <span class="status" id="status" role="status" data-state="idle">Se guarda en este dispositivo</span>
-        <button id="addSource" class="btn primary" type="button">+ Nueva fuente</button>
-      </div>
-    </header>
-
-    <section class="controlbar" aria-label="Navegación y período">
-      <nav class="main-nav" id="mainNav" aria-label="Navegación principal">
-        <button type="button" data-route="hub" aria-current="page">Hub</button>
-        <button type="button" data-route="saas" aria-current="false">Micro-SaaS</button>
-        <button type="button" data-route="projects" aria-current="false">Desarrollos</button>
-        <button type="button" data-route="hours" aria-current="false">Tracker de horas</button>
-        <button type="button" data-route="settings" aria-current="false">Ajustes</button>
+      <nav class="sidebar-nav" id="mainNav" aria-label="Secciones del Hub">
+        <button class="sidebar-nav-item" type="button" data-route="hub" aria-current="page" aria-label="Hub">
+          <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></span><span class="sidebar-nav-label">Hub</span>
+        </button>
+        <button class="sidebar-nav-item" type="button" data-route="saas" aria-current="false" aria-label="Micro-SaaS y suscripciones">
+          <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 8 4-8 4-8-4 8-4Zm-8 8 8 4 8-4M4 15l8 4 8-4"/></svg></span><span class="sidebar-nav-label">Micro-SaaS <em>&amp; suscripciones</em></span>
+        </button>
+        <button class="sidebar-nav-item" type="button" data-route="projects" aria-current="false" aria-label="Desarrollos puntuales">
+          <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 10h18"/></svg></span><span class="sidebar-nav-label">Desarrollos <em>Pago único</em></span>
+        </button>
+        <button class="sidebar-nav-item" type="button" data-route="hours" aria-current="false" aria-label="Tracker de horas">
+          <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></span><span class="sidebar-nav-label">Tracker de horas</span>
+        </button>
+        <button class="sidebar-nav-item" type="button" data-route="settings" aria-current="false" aria-label="Configuración y ajustes">
+          <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.1 2.1-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-3v-.09A1.7 1.7 0 0 0 10.7 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.1-2.1.06-.06A1.7 1.7 0 0 0 7.06 15 1.7 1.7 0 0 0 5.5 14H5v-3h.5a1.7 1.7 0 0 0 1.56-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.1-2.1.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.55V4h3v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.1 2.1-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.56 1h.04v3h-.04A1.7 1.7 0 0 0 19.4 15Z"/></svg></span><span class="sidebar-nav-label">Configuración <em>Ajustes &amp; copias</em></span>
+        </button>
       </nav>
+      <div class="sidebar-footer">
+        <button id="sidebarNewSource" class="sidebar-new-source" type="button" aria-label="Nueva fuente de ingreso" title="Nueva fuente de ingreso"><span aria-hidden="true">+</span><span class="sidebar-new-text">Nueva fuente</span></button>
+        <div class="sidebar-storage"><span class="sidebar-storage-dot" aria-hidden="true"></span><span class="sidebar-storage-text">Datos guardados localmente</span></div>
+      </div>
+    </aside>
+    <button id="sidebarScrim" class="sidebar-scrim" type="button" aria-label="Cerrar menú lateral" tabindex="-1"></button>
+
+    <div class="app-shell">
+      <header class="app-topbar">
+        <div class="topbar-identity">
+          <button id="menuToggle" class="menu-toggle" type="button" aria-label="Abrir menú" aria-controls="appSidebar" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div class="brand-block">
+            <span class="brand">Libreta de horas</span>
+            <span class="brand-subtitle">Hub central de ingresos</span>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="status" id="status" role="status" data-state="idle">Se guarda en este dispositivo</span>
+          <button id="addSource" class="btn primary" type="button">+ Nueva fuente</button>
+        </div>
+      </header>
+
+      <section class="controlbar" aria-label="Período y filtros">
+        <div class="view-context" aria-live="polite"><span>Vista actual</span><strong id="activeSectionLabel">Hub</strong></div>
       <div class="period-control" aria-label="Período">
         <button id="prevPeriod" class="icon-button" type="button" aria-label="Mes anterior">‹</button>
         <span id="periodLabel" class="period-name"></span>
@@ -396,7 +642,8 @@ dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
       </div>
     </section>
 
-    <main id="view"></main>
+      <main id="view"></main>
+    </div>
   </div>
 
   <dialog id="sourceDialog" aria-labelledby="sourceDialogTitle">

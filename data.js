@@ -167,6 +167,23 @@ export function loadSettings() {
   return settings;
 }
 
+// Preferencias visuales separadas de los datos financieros. Así el layout no
+// queda acoplado al controlador ni modifica una copia de seguridad contable.
+export function loadUiPreferences() {
+  const raw = read('ui');
+  return {
+    sidebarPinned: Boolean(raw?.sidebarPinned),
+    sidebarCompact: Boolean(raw?.sidebarCompact)
+  };
+}
+
+export function saveUiPreferences(preferences) {
+  return write('ui', {
+    sidebarPinned: Boolean(preferences?.sidebarPinned),
+    sidebarCompact: Boolean(preferences?.sidebarCompact)
+  });
+}
+
 export function saveSettings(settings) {
   return write('settings', {
     rate: settings.rate,
