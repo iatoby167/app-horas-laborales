@@ -324,7 +324,11 @@ export function normalizeSource(value = {}) {
   const clients = Number(value.clients);
   const estimatedHours = Number(value.estimatedHours);
   const projectStatus = VALID_PROJECT_STATES.has(value.projectStatus) ? value.projectStatus : 'development';
-  const billingCycle = VALID_CYCLES.has(value.billingCycle) ? value.billingCycle : (type === 'project' ? 'once' : 'monthly');
+  // Un desarrollo puntual nunca hereda un ciclo recurrente, incluso si fue
+  // creado con una versión anterior de la app.
+  const billingCycle = type === 'project'
+    ? 'once'
+    : (VALID_CYCLES.has(value.billingCycle) ? value.billingCycle : 'monthly');
   return {
     id: safeId(value.id) || createId(),
     name: typeof value.name === 'string' ? value.name.trim().slice(0, 120) : '',
@@ -388,8 +392,20 @@ export function toMonthlyAmount(source) {
   }
 }
 
+function projectPeriodDate(source) {
+  if (isValidDate(source.expectedDate)) return source.expectedDate;
+  // Los proyectos ya creados sin fecha quedan asociados a su mes de alta,
+  // en vez de proyectarse una y otra vez en los meses siguientes.
+  const createdDate = typeof source.createdAt === 'string' ? source.createdAt.slice(0, 10) : '';
+  return isValidDate(createdDate) ? createdDate : '';
+}
+
 export function sourceIsVisibleInPeriod(source, period) {
   if (source.type === 'saas') return true;
+  if (source.type === 'project') {
+    const date = projectPeriodDate(source);
+    return date ? monthKeyFromDate(date) === period : period === todayKey();
+  }
   if (source.billingCycle !== 'once') return true;
   // Si todavía no hay fecha, se proyecta solo en el mes actual: de lo
   // contrario un desarrollo sin fecha aparecería repetido en cada histórico.
@@ -399,7 +415,7 @@ export function sourceIsVisibleInPeriod(source, period) {
 export function sourceAmountForPeriod(source, period) {
   if (!sourceIsVisibleInPeriod(source, period) || source.projectStatus === 'paused') return 0;
   if (source.type === 'saas') return source.projectStatus === 'active' ? toMonthlyAmount(source) : 0;
-  if (source.type === 'project') return source.expectedDate && monthKeyFromDate(source.expectedDate) !== period ? 0 : source.amount;
+  if (source.type === 'project') return source.amount;
   if (source.type === 'hours') {
     if (source.billingCycle === 'once' && source.expectedDate && monthKeyFromDate(source.expectedDate) !== period) return 0;
     return source.amount * source.estimatedHours;

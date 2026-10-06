@@ -49,6 +49,7 @@ import {
   todayString,
   ymd
 } from './data.js';
+import { buildMonthlyInvoicePdf } from './pdf-report.js';
 
 const $ = selector => document.querySelector(selector);
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
@@ -439,8 +440,17 @@ function amountClass(value) {
   return value > 0 ? 'positive' : 'muted';
 }
 
-function paymentBadge(payment) {
-  return `<span class="badge payment ${escapeHtml(payment.status)}">${escapeHtml(PAYMENT_STATES[payment.status])}</span>`;
+function paymentBadge(payment, source, expected, quickToggle = false) {
+  const canToggle = quickToggle
+    && source
+    && expected > 0
+    && ['pending', 'paid'].includes(payment.status);
+  if (!canToggle) return `<span class="badge payment ${escapeHtml(payment.status)}">${escapeHtml(PAYMENT_STATES[payment.status])}</span>`;
+
+  const isPaid = payment.status === 'paid';
+  const action = isPaid ? 'Marcar como pendiente' : 'Marcar como cobrado total';
+  const sourceName = escapeHtml(sourceTitle(source));
+  return `<button class="badge payment ${escapeHtml(payment.status)} payment-toggle" type="button" data-action="toggle-source-payment" data-id="${escapeHtml(source.id)}" aria-pressed="${String(isPaid)}" aria-label="${action}: ${sourceName}" title="${action}: ${sourceName}">${escapeHtml(PAYMENT_STATES[payment.status])}</button>`;
 }
 
 function projectBadge(status, source, quickToggle = false) {
@@ -498,7 +508,7 @@ function renderSourceCard(source, compactCard = false, quickToggle = false) {
     <article class="income-card ${compactCard ? 'compact' : ''}" data-source-card="${escapeHtml(source.id)}">
       <div class="card-topline">
         <span class="badge-group">${typeBadge(source.type)}${currencyBadge(source.currency)}</span>
-        <div class="badge-group">${projectBadge(source.projectStatus, source, quickToggle)}${paymentBadge(payment)}</div>
+        <div class="badge-group">${projectBadge(source.projectStatus, source, quickToggle)}${paymentBadge(payment, source, expected, quickToggle)}</div>
       </div>
       <div class="card-heading">
         <div>
@@ -607,7 +617,7 @@ function renderDashboard() {
         <p class="lede">Seguimiento de productos, proyectos, horas y cobros para ${formatMonth().toLowerCase()}.</p>
       </div>
       <div class="hero-actions">
-        <button type="button" class="btn hero-action" data-action="export-monthly-summary" title="Descargar el detalle de facturación del período elegido en CSV">Descargar resumen</button>
+        <button type="button" class="btn hero-action" data-action="export-monthly-summary" title="Descargar el detalle de facturación del período elegido en PDF">Descargar PDF</button>
         <button type="button" class="btn primary hero-action" data-action="new-source">+ Nueva fuente</button>
       </div>
     </section>
@@ -637,7 +647,7 @@ function renderCatalog(type) {
   const title = isSaas ? 'Micro-SaaS & suscripciones' : 'Desarrollos puntuales';
   const description = isSaas
     ? 'MRR, clientes y estado de cobro de cada producto recurrente.'
-    : 'Proyectos de pago único, fechas de entrega y cobros esperados.';
+    : 'Proyectos de pago único del mes elegido, con sus fechas de entrega y cobros esperados.';
   const sources = sourcesFor(type, { relevantOnly: !isSaas });
   return `
     <section class="page-heading">
@@ -645,7 +655,7 @@ function renderCatalog(type) {
       <button type="button" class="btn primary" data-action="new-source" data-type="${type}">+ ${isSaas ? 'Nueva suscripción' : 'Nuevo desarrollo'}</button>
     </section>
     <section class="catalog-grid">
-      ${sources.length ? sources.map(source => renderSourceCard(source)).join('') : renderEmpty(`No hay ${isSaas ? 'suscripciones' : 'desarrollos'} para mostrar`, 'Podés crear una fuente ahora y completar el cobro más tarde.')}
+      ${sources.length ? sources.map(source => renderSourceCard(source, false, true)).join('') : renderEmpty(`No hay ${isSaas ? 'suscripciones' : 'desarrollos'} para mostrar`, 'Podés crear una fuente ahora y completar el cobro más tarde.')}
     </section>`;
 }
 
@@ -837,7 +847,11 @@ function updateSourceFormUI() {
   $('#sourceCycleWrap').hidden = isProject || isHours;
   $('#sourceClientsWrap').hidden = !isSaas;
   $('#sourceHoursWrap').hidden = !isHours;
-  $('#sourceDateLabel').textContent = isProject ? 'Fecha estimada de entrega / cobro' : 'Fecha estimada de cobro';
+  $('#sourceDateLabel').textContent = isProject ? 'Fecha del desarrollo / cobro' : 'Fecha estimada de cobro';
+  const isNewSource = !state.sources.some(source => source.id === fields.id.value);
+  if (isProject && isNewSource && !fields.expectedDate.value) {
+    fields.expectedDate.value = state.period === todayKey() ? todayString() : `${state.period}-01`;
+  }
   const currencyHint = $('#sourceCurrencyHint');
   currencyHint.hidden = currency !== 'USD';
   if (currency === 'USD') {
@@ -853,9 +867,11 @@ function openSourceModal(id = '', type = '') {
   const source = state.sources.find(item => item.id === id);
   const fields = sourceFormFields();
   const initialType = type || 'saas';
+  const projectDateForPeriod = state.period === todayKey() ? todayString() : `${state.period}-01`;
   const initial = source || normalizeSource({
     type: initialType,
     id: createId(),
+    expectedDate: initialType === 'project' ? projectDateForPeriod : '',
     projectStatus: (initialType === 'saas' || initialType === 'fixed') ? 'active' : 'development'
   });
   const payment = getPaymentForPeriod(initial, state.period);
@@ -899,6 +915,25 @@ function toggleSourceStatus(id) {
     : item);
   const saved = saveSources(state.sources);
   setStatus(saved ? `${sourceTitle(source)} ${nextStatus === 'active' ? 'activado' : 'pausado'}` : 'No se pudo guardar el cambio', saved ? 'saved' : 'error');
+  render();
+}
+
+function toggleSourcePayment(id) {
+  const source = state.sources.find(item => item.id === id);
+  if (!source) return;
+  const expected = sourceAmountForPeriod(source, state.period);
+  const payment = getPaymentForPeriod(source, state.period);
+  if (!(expected > 0) || !['pending', 'paid'].includes(payment.status)) return;
+
+  const isPaid = payment.status === 'paid';
+  const updatedSource = setPaymentForPeriod(source, state.period, {
+    status: isPaid ? 'pending' : 'paid',
+    paidAmount: isPaid ? 0 : expected
+  });
+  state.sources = state.sources.map(item => item.id === id ? updatedSource : item);
+  const saved = saveSources(state.sources);
+  const message = isPaid ? 'marcado como pendiente' : 'marcado como cobrado total';
+  setStatus(saved ? `${sourceTitle(source)} ${message}` : 'No se pudo guardar el cambio', saved ? 'saved' : 'error');
   render();
 }
 
@@ -1075,89 +1110,65 @@ function downloadBackup() {
   setStatus('Backup descargado', 'saved');
 }
 
-function csvCell(value) {
-  const text = String(value ?? '');
-  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return `"${safeText.replace(/"/g, '""')}"`;
-}
-
-function reportArsAmount(value) {
-  return Number.isFinite(value) ? money.format(value) : 'Sin cotización BCRA';
-}
-
-function buildMonthlySummaryFile() {
+function buildMonthlySummaryReport() {
   const { metrics, lines } = currentHub();
   const tracker = currentTracker();
   const trackerPayment = currentTrackerPayment();
   const trackerCurrency = currentRate().currency;
   const trackerCollected = collectedAmount(tracker.total, trackerPayment);
   const trackerPending = Math.max(tracker.total - trackerCollected, 0);
-  const trackerPendingArs = metrics.trackerTotalArs === null
-    ? null
-    : Math.max(metrics.trackerTotalArs - (metrics.trackerCollectedArs ?? 0), 0);
-  const details = lines
+  const rows = lines
     .filter(line => sourceIsVisibleInPeriod(line.source, state.period))
     .map(line => {
       const { source, payment } = line;
-      return [
-        sourceTitle(source),
-        SOURCE_TYPES[source.type],
-        PROJECT_STATES[source.projectStatus],
-        PAYMENT_STATES[payment.status],
-        source.currency,
-        formatCurrency(line.expected, source.currency),
-        reportArsAmount(line.expectedArs),
-        formatCurrency(line.collected, source.currency),
-        reportArsAmount(line.collectedArs),
-        formatCurrency(line.pending, source.currency),
-        reportArsAmount(line.pendingArs),
-        source.expectedDate || '—',
-        source.url || '—',
-        source.notes || '—'
-      ];
+      return {
+        name: sourceTitle(source),
+        type: SOURCE_TYPES[source.type],
+        projectStatus: PROJECT_STATES[source.projectStatus],
+        paymentStatus: PAYMENT_STATES[payment.status],
+        currency: source.currency,
+        expected: formatCurrency(line.expected, source.currency),
+        collected: formatCurrency(line.collected, source.currency),
+        pending: formatCurrency(line.pending, source.currency),
+        date: source.expectedDate ? formatDate(source.expectedDate) : '-'
+      };
     });
-  details.push([
-    'Tracker de horas',
-    SOURCE_TYPES.hours,
-    '—',
-    PAYMENT_STATES[trackerPayment.status],
-    trackerCurrency,
-    formatCurrency(tracker.total, trackerCurrency),
-    reportArsAmount(metrics.trackerTotalArs),
-    formatCurrency(trackerCollected, trackerCurrency),
-    reportArsAmount(metrics.trackerCollectedArs),
-    formatCurrency(trackerPending, trackerCurrency),
-    reportArsAmount(trackerPendingArs),
-    '—',
-    '—',
-    `${number.format(tracker.real)} h reales · ${number.format(tracker.payable)} h a pagar`
-  ]);
-
-  const rows = [
-    ['RESUMEN DE FACTURACIÓN MENSUAL', formatMonth()],
-    ['Período', state.period],
-    ['Generado', new Date().toLocaleString('es-AR')],
-    ['Dólar oficial BCRA', hasExchangeRate() ? `1 USD = ${money.format(state.exchangeRate.rate)}` : 'Sin cotización disponible'],
-    [],
-    ['RESUMEN CONSOLIDADO EN ARS', 'Importe'],
-    ['MRR activo', money.format(metrics.mrr)],
-    ['Desarrollos puntuales', money.format(metrics.projects)],
-    ['Servicios por hora', money.format(metrics.hours)],
-    ['Ingresos fijos / extras', money.format(metrics.fixed)],
-    ['Total estimado', money.format(metrics.total)],
-    ['Cobrado', money.format(metrics.collected)],
-    ['Pendiente', money.format(metrics.pending)],
-    ['Importes USD sin cotización', String(metrics.unconvertedUsd)],
-    [],
-    ['DETALLE DE FACTURACIÓN'],
-    ['Fuente', 'Tipo', 'Estado del proyecto', 'Estado de cobro', 'Moneda', 'Facturado / esperado', 'Equivalente ARS', 'Cobrado', 'Cobrado ARS', 'Pendiente', 'Pendiente ARS', 'Fecha estimada', 'URL', 'Notas'],
-    ...details
-  ];
-  return `\uFEFF${rows.map(row => row.map(csvCell).join(';')).join('\r\n')}`;
+  rows.push({
+    name: 'Tracker de horas',
+    type: SOURCE_TYPES.hours,
+    projectStatus: '-',
+    paymentStatus: PAYMENT_STATES[trackerPayment.status],
+    currency: trackerCurrency,
+    expected: formatCurrency(tracker.total, trackerCurrency),
+    collected: formatCurrency(trackerCollected, trackerCurrency),
+    pending: formatCurrency(trackerPending, trackerCurrency),
+    date: `${number.format(tracker.real)} h reales`
+  });
+  const exchangeRate = hasExchangeRate()
+    ? `1 USD = ${money.format(state.exchangeRate.rate)}`
+    : 'Sin cotización disponible';
+  return {
+    title: 'Resumen de facturación mensual',
+    period: formatMonth(),
+    generatedAt: `Generado ${refreshedAt.format(new Date())}`,
+    exchangeRate,
+    note: metrics.unconvertedUsd
+      ? `Atención: hay ${metrics.unconvertedUsd} ${metrics.unconvertedUsd === 1 ? 'importe' : 'importes'} en USD sin cotización BCRA; no se incluyen en el consolidado ARS.`
+      : `Dólar oficial BCRA: ${exchangeRate}. Montos consolidados en ARS.`,
+    totals: {
+      mrr: money.format(metrics.mrr),
+      projects: money.format(metrics.projects),
+      total: money.format(metrics.total),
+      collected: money.format(metrics.collected),
+      pending: money.format(metrics.pending)
+    },
+    rows
+  };
 }
 
 function downloadMonthlySummary() {
-  downloadFile(buildMonthlySummaryFile(), 'text/csv;charset=utf-8', `resumen-facturacion-${state.period}.csv`);
+  const pdf = buildMonthlyInvoicePdf(buildMonthlySummaryReport());
+  downloadFile(pdf, 'application/pdf', `resumen-facturacion-${state.period}.pdf`);
   setStatus(`Resumen de ${formatMonth().toLowerCase()} descargado`, 'saved');
 }
 
@@ -1211,6 +1222,7 @@ function handleAction(action, target) {
     case 'new-source': openSourceModal('', target.dataset.type || ''); break;
     case 'edit-source': openSourceModal(target.dataset.id); break;
     case 'toggle-source-status': toggleSourceStatus(target.dataset.id); break;
+    case 'toggle-source-payment': toggleSourcePayment(target.dataset.id); break;
     case 'go-route': setRoute(target.dataset.route); break;
     case 'go-hours': setRoute('hours'); break;
     case 'day': onDay(target.dataset.date); break;

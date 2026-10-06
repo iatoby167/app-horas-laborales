@@ -122,10 +122,11 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
   box-shadow: 0 8px 24px rgb(0 0 0 / .06);
   backdrop-filter: blur(16px);
   transform: translateY(0);
-  will-change: transform, opacity;
-  transition: transform .28s var(--motion-out), opacity .2s ease;
+  transform-origin: top center;
+  will-change: transform, opacity, filter;
+  transition: transform .46s cubic-bezier(.22, 1, .36, 1), opacity .34s ease-out, filter .34s ease-out;
 }
-body.controls-hidden .controlbar { opacity: 0; pointer-events: none; transform: translateY(calc(-100% - 16px)); }
+body.controls-hidden .controlbar { opacity: 0; pointer-events: none; filter: blur(1.5px); transform: translateY(calc(-100% - 18px)) scale(.985); }
 .filter-control button, .mode-tabs button {
   min-height: 38px;
   padding: 0 12px;
@@ -236,8 +237,8 @@ body.controls-hidden .controlbar { opacity: 0; pointer-events: none; transform: 
 .badge.project.development { color: var(--holiday); border-color: color-mix(in srgb, var(--holiday) 55%, var(--line)); }
 .badge.project.paused { color: var(--muted); }
 .badge.project.delivered { color: var(--ink); }
-button.status-toggle { appearance: none; cursor: pointer; font: inherit; line-height: inherit; background: transparent; transition: transform .18s var(--motion-out), background .18s ease, box-shadow .18s ease, color .18s ease; }
-button.status-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.status-toggle, button.payment-toggle { appearance: none; cursor: pointer; font: inherit; line-height: inherit; background: transparent; transition: transform .18s var(--motion-out), background .18s ease, box-shadow .18s ease, color .18s ease; }
+button.status-toggle:focus-visible, button.payment-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card-heading { margin-top: 12px; }
 .card-heading h3 { font-size: 19px; line-height: 1.1; overflow-wrap: anywhere; }
 .card-heading p { margin-top: 5px; color: var(--muted); font: 12px var(--font-data); }
@@ -555,7 +556,7 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
   .btn:hover, .icon-button:hover, .today-button:hover { filter: none; transform: translateY(-1px); box-shadow: 0 7px 14px rgb(9 30 19 / .1); }
   .btn.primary:hover { box-shadow: 0 9px 19px color-mix(in srgb, var(--accent) 28%, transparent); }
   .exchange-refresh:hover { background: var(--surface); color: var(--accent); transform: rotate(20deg); }
-  button.status-toggle:hover { background: var(--accent-soft); box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 15%, transparent); transform: translateY(-1px); }
+  button.status-toggle:hover, button.payment-toggle:hover { background: var(--accent-soft); box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 15%, transparent); transform: translateY(-1px); }
 }
 
 @media (min-width: 1024px) {
