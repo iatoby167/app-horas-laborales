@@ -20,6 +20,7 @@ import {
   loadSettings,
   loadSources,
   loadTrackerPayments,
+  loadUiPreferences,
   mondayOffset,
   monthKey,
   monthKeyFromDate,
@@ -32,6 +33,7 @@ import {
   saveSettings,
   saveSources,
   saveTrackerPayments,
+  saveUiPreferences,
   setPaymentForPeriod,
   shiftMonth,
   sourceAmountForPeriod,
@@ -45,15 +47,21 @@ import {
 const $ = selector => document.querySelector(selector);
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
-const compact = new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 1 });
 const monthYear = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' });
 const monthOnly = new Intl.DateTimeFormat('es-AR', { month: 'long' });
 const longDate = new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const shortDate = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short' });
-const weekday = new Intl.DateTimeFormat('es-AR', { weekday: 'short' });
 
 const elements = {
   nav: $('#mainNav'),
+  sidebar: $('#appSidebar'),
+  sidebarScrim: $('#sidebarScrim'),
+  menuToggle: $('#menuToggle'),
+  pinSidebar: $('#pinSidebar'),
+  collapseSidebar: $('#collapseSidebar'),
+  closeSidebar: $('#closeSidebar'),
+  sidebarNewSource: $('#sidebarNewSource'),
+  activeSectionLabel: $('#activeSectionLabel'),
   periodInput: $('#periodInput'),
   periodLabel: $('#periodLabel'),
   filter: $('#filterControl'),
@@ -85,7 +93,11 @@ const state = {
   trackerPayments: loadTrackerPayments(),
   mode: 'work',
   editingDate: null,
-  pendingImport: null
+  pendingImport: null,
+  sidebar: {
+    open: false,
+    ...loadUiPreferences()
+  }
 };
 
 const ROUTES = {
@@ -101,6 +113,97 @@ const FILTERS = {
   pending: 'Pendientes',
   paid: 'Cobrados'
 };
+
+const desktopQuery = window.matchMedia('(min-width: 1024px)');
+
+function sidebarIsPinned() {
+  return state.sidebar.sidebarPinned && desktopQuery.matches;
+}
+
+function sidebarIsVisible() {
+  return sidebarIsPinned() || state.sidebar.open;
+}
+
+function updateSidebarFocus(visible) {
+  if ('inert' in elements.sidebar) {
+    elements.sidebar.inert = !visible;
+    return;
+  }
+  elements.sidebar.querySelectorAll('button, a').forEach(control => {
+    if (visible) control.removeAttribute('tabindex');
+    else control.setAttribute('tabindex', '-1');
+  });
+}
+
+function applySidebarState() {
+  const pinned = sidebarIsPinned();
+  const visible = sidebarIsVisible();
+  const compactSidebar = pinned && state.sidebar.sidebarCompact;
+  document.body.classList.toggle('sidebar-open', visible);
+  document.body.classList.toggle('sidebar-pinned', pinned);
+  document.body.classList.toggle('sidebar-compact', compactSidebar);
+  document.body.classList.toggle('drawer-open', state.sidebar.open && !pinned);
+  elements.sidebar.setAttribute('aria-hidden', String(!visible));
+  elements.menuToggle.setAttribute('aria-expanded', String(visible));
+  elements.menuToggle.setAttribute('aria-label', pinned ? (compactSidebar ? 'Expandir barra lateral' : 'Colapsar barra lateral') : visible ? 'Cerrar menú' : 'Abrir menú');
+  elements.pinSidebar.setAttribute('aria-pressed', String(state.sidebar.sidebarPinned));
+  elements.pinSidebar.setAttribute('aria-label', state.sidebar.sidebarPinned ? 'Desfijar barra lateral' : 'Fijar barra lateral');
+  elements.collapseSidebar.setAttribute('aria-pressed', String(state.sidebar.sidebarCompact));
+  elements.collapseSidebar.setAttribute('aria-label', state.sidebar.sidebarCompact ? 'Mostrar etiquetas' : 'Mostrar solo íconos');
+  updateSidebarFocus(visible);
+}
+
+function saveSidebarState() {
+  if (!saveUiPreferences(state.sidebar)) setStatus('No se pudo guardar la preferencia de navegación', 'error');
+}
+
+function openSidebar() {
+  state.sidebar.open = true;
+  applySidebarState();
+  window.setTimeout(() => elements.nav.querySelector('button[aria-current="page"]')?.focus(), 80);
+}
+
+function closeSidebar() {
+  if (sidebarIsPinned()) return;
+  state.sidebar.open = false;
+  applySidebarState();
+  elements.menuToggle.focus();
+}
+
+function toggleSidebar() {
+  if (sidebarIsPinned()) {
+    state.sidebar.sidebarCompact = !state.sidebar.sidebarCompact;
+    saveSidebarState();
+    applySidebarState();
+    return;
+  }
+  if (state.sidebar.open) closeSidebar();
+  else openSidebar();
+}
+
+function toggleSidebarPin() {
+  if (!desktopQuery.matches) return;
+  state.sidebar.sidebarPinned = !state.sidebar.sidebarPinned;
+  state.sidebar.open = true;
+  if (state.sidebar.sidebarPinned) state.sidebar.sidebarCompact = false;
+  saveSidebarState();
+  applySidebarState();
+}
+
+function toggleSidebarCompact() {
+  if (!sidebarIsPinned()) return;
+  state.sidebar.sidebarCompact = !state.sidebar.sidebarCompact;
+  saveSidebarState();
+  applySidebarState();
+}
+
+function closeDrawerAfterNavigation() {
+  if (!sidebarIsPinned()) {
+    state.sidebar.open = false;
+    applySidebarState();
+    elements.menuToggle.focus();
+  }
+}
 
 function cap(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
@@ -313,10 +416,10 @@ function renderCollectionCard(metrics) {
 function renderKpis(metrics) {
   return `
     <section class="kpi-grid" aria-label="Resumen financiero">
-      <article class="kpi-card accent"><span>MRR activo</span><strong>${money.format(metrics.mrr)}</strong><small>Suscripciones activas</small></article>
-      <article class="kpi-card"><span>Desarrollos puntuales</span><strong>${money.format(metrics.projects)}</strong><small>Proyectado en ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</small></article>
-      <article class="kpi-card total"><span>Ingreso estimado</span><strong>${money.format(metrics.total)}</strong><small>${formatMonth()}</small></article>
-      <article class="kpi-card"><span>Apps y proyectos activos</span><strong>${number.format(metrics.active)}</strong><small>Sin contar pausados</small></article>
+      <article class="kpi-card accent animate-in" style="--delay:40ms"><span>MRR activo</span><strong>${money.format(metrics.mrr)}</strong><small>Suscripciones activas</small></article>
+      <article class="kpi-card animate-in" style="--delay:90ms"><span>Desarrollos puntuales</span><strong>${money.format(metrics.projects)}</strong><small>Proyectado en ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</small></article>
+      <article class="kpi-card total animate-in" style="--delay:140ms"><span>Ingreso estimado</span><strong>${money.format(metrics.total)}</strong><small>${formatMonth()}</small></article>
+      <article class="kpi-card animate-in" style="--delay:190ms"><span>Apps y proyectos activos</span><strong>${number.format(metrics.active)}</strong><small>Sin contar pausados</small></article>
     </section>`;
 }
 
@@ -326,7 +429,7 @@ function renderDashboard() {
   const projects = sourcesFor('project', { relevantOnly: true });
   const fixed = sourcesFor('fixed', { relevantOnly: true });
   return `
-    <section class="dashboard-hero">
+    <section class="dashboard-hero animate-in" style="--delay:0ms">
       <div>
         <p class="eyebrow">Hub financiero personal</p>
         <h1>Tu panorama de ingresos, claro y en un solo lugar.</h1>
@@ -335,15 +438,15 @@ function renderDashboard() {
       <button type="button" class="btn primary hero-action" data-action="new-source">+ Nueva fuente</button>
     </section>
     ${renderKpis(metrics)}
-    <section class="dashboard-split">
+    <section class="dashboard-split animate-in" style="--delay:230ms">
       ${renderCollectionCard(metrics)}
       ${renderTrackerWidget()}
     </section>
-    <section class="module-section">
+    <section class="module-section animate-in" style="--delay:280ms">
       <div class="section-header"><div><p class="section-kicker">Recurrente</p><h2>Micro-SaaS & suscripciones</h2></div><button class="text-button" type="button" data-action="go-route" data-route="saas">Ver todo</button></div>
       <div class="card-grid">${saas.length ? saas.slice(0, 3).map(source => renderSourceCard(source, true)).join('') : renderEmpty('Todavía no hay suscripciones', 'Agregá tu primer Micro-SaaS o mantenimiento activo.')}</div>
     </section>
-    <section class="module-section two-columns">
+    <section class="module-section two-columns animate-in" style="--delay:330ms">
       <div>
         <div class="section-header"><div><p class="section-kicker">Pago único</p><h2>Desarrollos puntuales</h2></div><button class="text-button" type="button" data-action="go-route" data-route="projects">Ver todo</button></div>
         <div class="stack-list">${projects.length ? projects.slice(0, 3).map(source => renderSourceCard(source, true)).join('') : renderEmpty('Sin proyectos en este período', 'Usá una fecha estimada para proyectar un desarrollo.')}</div>
@@ -480,23 +583,27 @@ function render() {
   elements.periodInput.value = state.period;
   elements.periodLabel.textContent = formatMonth();
   elements.status.textContent = state.status;
+  elements.activeSectionLabel.textContent = ROUTES[state.route];
   elements.nav.querySelectorAll('button[data-route]').forEach(button => {
     button.setAttribute('aria-current', button.dataset.route === state.route ? 'page' : 'false');
   });
   elements.filter.querySelectorAll('button[data-filter]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.filter === state.filter));
   });
-  if (state.route === 'hub') elements.view.innerHTML = renderDashboard();
-  else if (state.route === 'saas') elements.view.innerHTML = renderCatalog('saas');
-  else if (state.route === 'projects') elements.view.innerHTML = renderCatalog('project');
-  else if (state.route === 'hours') elements.view.innerHTML = renderHours();
-  else elements.view.innerHTML = renderSettings();
+  let content;
+  if (state.route === 'hub') content = renderDashboard();
+  else if (state.route === 'saas') content = renderCatalog('saas');
+  else if (state.route === 'projects') content = renderCatalog('project');
+  else if (state.route === 'hours') content = renderHours();
+  else content = renderSettings();
+  elements.view.innerHTML = `<div class="page page-${escapeHtml(state.route)}">${content}</div>`;
 }
 
 function setRoute(route) {
   if (!ROUTES[route]) return;
   state.route = route;
   render();
+  closeDrawerAfterNavigation();
   window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
 
@@ -807,6 +914,19 @@ function handleAction(action, target) {
   }
 }
 
+elements.menuToggle.addEventListener('click', toggleSidebar);
+elements.sidebarScrim.addEventListener('click', closeSidebar);
+elements.closeSidebar.addEventListener('click', closeSidebar);
+elements.pinSidebar.addEventListener('click', toggleSidebarPin);
+elements.collapseSidebar.addEventListener('click', toggleSidebarCompact);
+elements.sidebarNewSource.addEventListener('click', () => {
+  if (!sidebarIsPinned()) {
+    state.sidebar.open = false;
+    applySidebarState();
+  }
+  openSourceModal();
+});
+
 elements.nav.addEventListener('click', event => {
   const button = event.target.closest('button[data-route]');
   if (button) setRoute(button.dataset.route);
@@ -880,6 +1000,13 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !state.editingDate) render();
 });
 
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && state.sidebar.open && !sidebarIsPinned()) closeSidebar();
+});
+
+if (typeof desktopQuery.addEventListener === 'function') desktopQuery.addEventListener('change', applySidebarState);
+else if (typeof desktopQuery.addListener === 'function') desktopQuery.addListener(applySidebarState);
+
 if (!storageWorks()) setStatus('No se pudo acceder al almacenamiento', 'error');
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
@@ -888,3 +1015,4 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 // Se carga el mes actual sin modificar los registros anteriores guardados por la versión original.
 ensureMonth();
 render();
+applySidebarState();
