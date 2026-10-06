@@ -38,6 +38,7 @@
   --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
   --font-body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data: 'DM Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --topbar-sticky-height: 68px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,11 +85,17 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
   padding: max(18px, env(safe-area-inset-top, 0px)) clamp(16px, 3vw, 40px) calc(48px + env(safe-area-inset-bottom, 0px));
 }
 .app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 0 0 18px;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 .brand-block { min-width: 0; }
 .brand { display: block; font: 700 12px var(--font-display); letter-spacing: .15em; text-transform: uppercase; color: var(--muted); }
@@ -110,7 +117,7 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
   background: var(--surface);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   position: sticky;
-  top: max(8px, env(safe-area-inset-top, 0px));
+  top: calc(var(--topbar-sticky-height) + env(safe-area-inset-top, 0px));
   z-index: 5;
   box-shadow: 0 8px 24px rgb(0 0 0 / .06);
   backdrop-filter: blur(16px);
@@ -173,7 +180,8 @@ body.controls-hidden .controlbar { opacity: 0; pointer-events: none; transform: 
 .eyebrow, .section-kicker { color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
 .dashboard-hero h1, .page-heading h1 { max-width: 760px; margin-top: 5px; font-size: clamp(28px, 4vw, 46px); line-height: 1.02; letter-spacing: -.035em; }
 .lede { max-width: 660px; margin-top: 10px; color: var(--muted); font-size: 16px; }
-.hero-action { flex: none; }
+.hero-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; flex: none; }
+.hero-action { flex: none; white-space: nowrap; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .kpi-card, .collection-card, .tracker-widget, .income-card, .calendar-panel, .payment-panel, .settings-card {
@@ -317,6 +325,7 @@ dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
 }
 
 @media (max-width: 760px) {
+  :root { --topbar-sticky-height: 86px; }
   .app-shell { padding-inline: 14px; }
   .app-topbar { align-items: flex-start; }
   .top-actions { flex-direction: column-reverse; align-items: flex-end; gap: 6px; }
@@ -325,6 +334,7 @@ dialog::backdrop { background: rgb(0 0 0 / .48); backdrop-filter: blur(3px); }
   .filter-control { order: 3; margin-left: auto; }
   .dashboard-hero, .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
   .dashboard-hero h1, .page-heading h1 { font-size: clamp(28px, 9vw, 40px); }
+  .hero-actions { width: 100%; display: grid; grid-template-columns: 1fr; }
   .hero-action { width: 100%; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi-card { min-height: 128px; }

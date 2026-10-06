@@ -221,16 +221,16 @@ function normalizeMonthlyRates(value) {
   return rates;
 }
 
-// Las tarifas mensuales preservan el valor con el que se liquidó cada período.
-// Si un mes todavía no tiene una tarifa propia, se conserva la tarifa base de
-// versiones anteriores para no alterar los historiales existentes.
+// Cada período guarda su propia tarifa. Los meses que todavía no fueron
+// configurados empiezan en cero, para que un valor nuevo no se replique a
+// meses anteriores ni a los siguientes.
 export function getRateForPeriod(settings, period) {
   const monthlyRate = settings?.monthlyRates?.[period];
   if (monthlyRate && Number.isFinite(Number(monthlyRate.rate)) && Number(monthlyRate.rate) >= 0) {
     return { rate: Number(monthlyRate.rate), currency: normalizeCurrency(monthlyRate.currency), isMonthly: true };
   }
   return {
-    rate: Number.isFinite(Number(settings?.rate)) && Number(settings.rate) >= 0 ? Number(settings.rate) : 0,
+    rate: 0,
     currency: normalizeCurrency(settings?.rateCurrency),
     isMonthly: false
   };
