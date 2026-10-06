@@ -1,6 +1,6 @@
 /* Service worker de la Libreta de Horas: deja la app disponible sin internet.
    Si cambiás algún archivo de la lista, subí el número de VERSION para que los dispositivos lo actualicen. */
-const VERSION = 'v12';
+const VERSION = 'v14';
 const APP_CACHE = 'libreta-horas-app-' + VERSION;
 const FONT_CACHE = 'libreta-horas-fonts';
 const ASSETS = [

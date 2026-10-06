@@ -133,6 +133,7 @@ const FILTERS = {
 };
 
 const desktopQuery = window.matchMedia('(min-width: 1024px)');
+const CONTROLBAR_REVEAL_TOP = 8;
 let lastScrollY = Math.max(window.scrollY, 0);
 let controlbarScrollTicking = false;
 
@@ -146,12 +147,11 @@ function updateControlbarVisibility() {
   window.requestAnimationFrame(() => {
     const currentY = Math.max(window.scrollY, 0);
     const distance = currentY - lastScrollY;
-    if (currentY <= 72) {
+    if (currentY <= CONTROLBAR_REVEAL_TOP) {
       showControlbar();
       lastScrollY = currentY;
     } else if (Math.abs(distance) >= 8) {
       if (distance > 0 && !elements.controlbar.contains(document.activeElement)) document.body.classList.add('controls-hidden');
-      if (distance < 0) showControlbar();
       lastScrollY = currentY;
     }
     controlbarScrollTicking = false;
@@ -606,7 +606,10 @@ function renderDashboard() {
         <h1>Tu panorama de ingresos, claro y en un solo lugar.</h1>
         <p class="lede">Seguimiento de productos, proyectos, horas y cobros para ${formatMonth().toLowerCase()}.</p>
       </div>
-      <button type="button" class="btn primary hero-action" data-action="new-source">+ Nueva fuente</button>
+      <div class="hero-actions">
+        <button type="button" class="btn hero-action" data-action="export-monthly-summary" title="Descargar el detalle de facturación del período elegido en CSV">Descargar resumen</button>
+        <button type="button" class="btn primary hero-action" data-action="new-source">+ Nueva fuente</button>
+      </div>
     </section>
     ${renderKpis(metrics)}
     <section class="dashboard-split animate-in" style="--delay:230ms">
@@ -680,7 +683,7 @@ function renderHours() {
   const convertedTotal = arsConversionLabel(tracker.total, currency);
   const rateScopeNote = rate.isMonthly
     ? `Tarifa guardada solo para ${formatMonth().toLowerCase()}.`
-    : `Todavía usa la tarifa base. Al cambiarla quedará guardada solo para ${formatMonth().toLowerCase()}.`;
+    : `Este mes empieza en 0. Al cargar una tarifa quedará guardada solo para ${formatMonth().toLowerCase()}.`;
   return `
     <section class="page-heading">
       <div><p class="eyebrow">Módulo integrado</p><h1>Tracker de horas & servicios</h1><p class="lede">El contador original sigue acá y aporta automáticamente al estimado mensual del Hub.</p></div>
@@ -783,7 +786,6 @@ function render() {
 function setRoute(route) {
   if (!ROUTES[route]) return;
   state.route = route;
-  showControlbar();
   render();
   closeDrawerAfterNavigation();
   window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
@@ -1057,17 +1059,106 @@ function buildBackupFile() {
   return JSON.stringify(exportBackup(state.settings, state.months, state.sources, state.trackerPayments, state.exchangeRate), null, 2);
 }
 
-function downloadBackup() {
-  const content = buildBackupFile();
-  const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+function downloadFile(content, type, filename) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = `hub-financiero-backup-${todayString()}.json`;
+  link.download = filename;
   document.body.append(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadBackup() {
+  downloadFile(buildBackupFile(), 'application/json', `hub-financiero-backup-${todayString()}.json`);
   setStatus('Backup descargado', 'saved');
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
+}
+
+function reportArsAmount(value) {
+  return Number.isFinite(value) ? money.format(value) : 'Sin cotización BCRA';
+}
+
+function buildMonthlySummaryFile() {
+  const { metrics, lines } = currentHub();
+  const tracker = currentTracker();
+  const trackerPayment = currentTrackerPayment();
+  const trackerCurrency = currentRate().currency;
+  const trackerCollected = collectedAmount(tracker.total, trackerPayment);
+  const trackerPending = Math.max(tracker.total - trackerCollected, 0);
+  const trackerPendingArs = metrics.trackerTotalArs === null
+    ? null
+    : Math.max(metrics.trackerTotalArs - (metrics.trackerCollectedArs ?? 0), 0);
+  const details = lines
+    .filter(line => sourceIsVisibleInPeriod(line.source, state.period))
+    .map(line => {
+      const { source, payment } = line;
+      return [
+        sourceTitle(source),
+        SOURCE_TYPES[source.type],
+        PROJECT_STATES[source.projectStatus],
+        PAYMENT_STATES[payment.status],
+        source.currency,
+        formatCurrency(line.expected, source.currency),
+        reportArsAmount(line.expectedArs),
+        formatCurrency(line.collected, source.currency),
+        reportArsAmount(line.collectedArs),
+        formatCurrency(line.pending, source.currency),
+        reportArsAmount(line.pendingArs),
+        source.expectedDate || '—',
+        source.url || '—',
+        source.notes || '—'
+      ];
+    });
+  details.push([
+    'Tracker de horas',
+    SOURCE_TYPES.hours,
+    '—',
+    PAYMENT_STATES[trackerPayment.status],
+    trackerCurrency,
+    formatCurrency(tracker.total, trackerCurrency),
+    reportArsAmount(metrics.trackerTotalArs),
+    formatCurrency(trackerCollected, trackerCurrency),
+    reportArsAmount(metrics.trackerCollectedArs),
+    formatCurrency(trackerPending, trackerCurrency),
+    reportArsAmount(trackerPendingArs),
+    '—',
+    '—',
+    `${number.format(tracker.real)} h reales · ${number.format(tracker.payable)} h a pagar`
+  ]);
+
+  const rows = [
+    ['RESUMEN DE FACTURACIÓN MENSUAL', formatMonth()],
+    ['Período', state.period],
+    ['Generado', new Date().toLocaleString('es-AR')],
+    ['Dólar oficial BCRA', hasExchangeRate() ? `1 USD = ${money.format(state.exchangeRate.rate)}` : 'Sin cotización disponible'],
+    [],
+    ['RESUMEN CONSOLIDADO EN ARS', 'Importe'],
+    ['MRR activo', money.format(metrics.mrr)],
+    ['Desarrollos puntuales', money.format(metrics.projects)],
+    ['Servicios por hora', money.format(metrics.hours)],
+    ['Ingresos fijos / extras', money.format(metrics.fixed)],
+    ['Total estimado', money.format(metrics.total)],
+    ['Cobrado', money.format(metrics.collected)],
+    ['Pendiente', money.format(metrics.pending)],
+    ['Importes USD sin cotización', String(metrics.unconvertedUsd)],
+    [],
+    ['DETALLE DE FACTURACIÓN'],
+    ['Fuente', 'Tipo', 'Estado del proyecto', 'Estado de cobro', 'Moneda', 'Facturado / esperado', 'Equivalente ARS', 'Cobrado', 'Cobrado ARS', 'Pendiente', 'Pendiente ARS', 'Fecha estimada', 'URL', 'Notas'],
+    ...details
+  ];
+  return `\uFEFF${rows.map(row => row.map(csvCell).join(';')).join('\r\n')}`;
+}
+
+function downloadMonthlySummary() {
+  downloadFile(buildMonthlySummaryFile(), 'text/csv;charset=utf-8', `resumen-facturacion-${state.period}.csv`);
+  setStatus(`Resumen de ${formatMonth().toLowerCase()} descargado`, 'saved');
 }
 
 function chooseImport() {
@@ -1125,6 +1216,7 @@ function handleAction(action, target) {
     case 'day': onDay(target.dataset.date); break;
     case 'mode': state.mode = target.dataset.mode; render(); break;
     case 'refresh-exchange-rate': refreshExchangeRate(); break;
+    case 'export-monthly-summary': downloadMonthlySummary(); break;
     case 'export-backup': downloadBackup(); break;
     case 'import-backup': chooseImport(); break;
     default: break;
