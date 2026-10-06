@@ -37,10 +37,16 @@ export const BILLING_CYCLES = {
   once: 'Única vez'
 };
 
+export const CURRENCIES = {
+  ARS: 'Pesos argentinos (ARS)',
+  USD: 'Dólares estadounidenses (USD)'
+};
+
 const VALID_TYPES = new Set(Object.keys(SOURCE_TYPES));
 const VALID_PROJECT_STATES = new Set(Object.keys(PROJECT_STATES));
 const VALID_PAYMENT_STATES = new Set(Object.keys(PAYMENT_STATES));
 const VALID_CYCLES = new Set(Object.keys(BILLING_CYCLES));
+const VALID_CURRENCIES = new Set(Object.keys(CURRENCIES));
 
 export const pad = value => String(value).padStart(2, '0');
 export const monthKey = (year, month) => `${year}-${pad(month)}`;
@@ -153,12 +159,14 @@ export function loadSettings() {
   const raw = read('settings');
   const settings = {
     rate: 0,
+    rateCurrency: 'ARS',
     mult: DEFAULT_MULT,
     hours: DEFAULT_HOURS.slice(),
     holidays: new Set(HOLIDAYS_2026)
   };
   if (!raw || typeof raw !== 'object') return settings;
   if (Number.isFinite(raw.rate) && raw.rate >= 0) settings.rate = raw.rate;
+  if (VALID_CURRENCIES.has(raw.rateCurrency)) settings.rateCurrency = raw.rateCurrency;
   if (Number.isFinite(raw.mult) && raw.mult >= 1 && raw.mult <= 10) settings.mult = raw.mult;
   if (Array.isArray(raw.hours) && raw.hours.length === 7 && raw.hours.every(value => Number.isFinite(value) && value >= 0 && value <= 24)) {
     settings.hours = raw.hours.slice();
@@ -187,10 +195,44 @@ export function saveUiPreferences(preferences) {
 export function saveSettings(settings) {
   return write('settings', {
     rate: settings.rate,
+    rateCurrency: VALID_CURRENCIES.has(settings.rateCurrency) ? settings.rateCurrency : 'ARS',
     mult: settings.mult,
     hours: settings.hours.slice(),
     holidays: Array.from(settings.holidays).sort()
   });
+}
+
+function normalizeCurrency(value) {
+  return VALID_CURRENCIES.has(value) ? value : 'ARS';
+}
+
+// La cotización se persiste para poder seguir mostrando conversiones cuando la
+// app se abre sin conexión. La fuente y la fecha publicada nunca se ocultan.
+export function normalizeExchangeRate(value = {}) {
+  const rate = Number(value?.rate);
+  return {
+    rate: Number.isFinite(rate) && rate > 0 ? rate : 0,
+    quoteDate: isValidDate(value?.quoteDate) ? value.quoteDate : '',
+    fetchedAt: typeof value?.fetchedAt === 'string' && !Number.isNaN(Date.parse(value.fetchedAt)) ? value.fetchedAt : '',
+    source: 'BCRA'
+  };
+}
+
+export function loadExchangeRate() {
+  return normalizeExchangeRate(read('hub:usd-rate'));
+}
+
+export function saveExchangeRate(rate) {
+  return write('hub:usd-rate', normalizeExchangeRate(rate));
+}
+
+export function amountInArs(amount, currency = 'ARS', usdRate = 0) {
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount)) return null;
+  if (numericAmount === 0 || normalizeCurrency(currency) === 'ARS') return numericAmount;
+  const numericRate = Number(usdRate);
+  if (!(numericRate > 0)) return null;
+  return Math.round(numericAmount * numericRate * 100) / 100;
 }
 
 export function loadMonth(key) {
@@ -235,6 +277,7 @@ function normalizePayments(value) {
 export function normalizeSource(value = {}) {
   const type = VALID_TYPES.has(value.type) ? value.type : 'saas';
   const amount = Number(value.amount);
+  const currency = normalizeCurrency(value.currency);
   const clients = Number(value.clients);
   const estimatedHours = Number(value.estimatedHours);
   const projectStatus = VALID_PROJECT_STATES.has(value.projectStatus) ? value.projectStatus : 'development';
@@ -244,6 +287,7 @@ export function normalizeSource(value = {}) {
     name: typeof value.name === 'string' ? value.name.trim().slice(0, 120) : '',
     type,
     amount: Number.isFinite(amount) && amount >= 0 ? amount : 0,
+    currency,
     billingCycle,
     clients: Number.isFinite(clients) && clients >= 0 ? Math.round(clients) : 0,
     estimatedHours: Number.isFinite(estimatedHours) && estimatedHours >= 0 ? estimatedHours : 0,
@@ -348,31 +392,65 @@ export function calculateMonth(days, holidays, rate, mult) {
   };
 }
 
-export function calculateHub(sources, period, trackerTotal, trackerPayment) {
-  const metrics = { mrr: 0, projects: 0, hours: trackerTotal, fixed: 0, collected: 0, pending: 0, active: 0 };
+export function calculateHub(sources, period, trackerTotal, trackerPayment, usdRate = 0, trackerCurrency = 'ARS') {
+  const normalizedTrackerCurrency = normalizeCurrency(trackerCurrency);
+  const metrics = {
+    mrr: 0,
+    projects: 0,
+    hours: 0,
+    fixed: 0,
+    collected: 0,
+    pending: 0,
+    active: 0,
+    unconvertedUsd: 0,
+    trackerTotal,
+    trackerCurrency: normalizedTrackerCurrency,
+    trackerTotalArs: null,
+    trackerCollected: 0,
+    trackerCollectedArs: null
+  };
   const lines = [];
   for (const source of sources) {
     const expected = sourceAmountForPeriod(source, period);
     const payment = getPaymentForPeriod(source, period);
     const collected = collectedAmount(expected, payment);
-    if (source.type === 'saas') metrics.mrr += expected;
-    if (source.type === 'project') metrics.projects += expected;
-    if (source.type === 'hours') metrics.hours += expected;
-    if (source.type === 'fixed') metrics.fixed += expected;
+    const expectedArs = amountInArs(expected, source.currency, usdRate);
+    const collectedArs = amountInArs(collected, source.currency, usdRate);
+    const amountForMetric = expectedArs ?? 0;
+    if (expected > 0 && expectedArs === null) metrics.unconvertedUsd += 1;
+    if (source.type === 'saas') metrics.mrr += amountForMetric;
+    if (source.type === 'project') metrics.projects += amountForMetric;
+    if (source.type === 'hours') metrics.hours += amountForMetric;
+    if (source.type === 'fixed') metrics.fixed += amountForMetric;
     if ((source.type === 'saas' || source.type === 'project') && source.projectStatus !== 'paused' && source.projectStatus !== 'delivered') metrics.active += 1;
-    metrics.collected += collected;
-    lines.push({ source, expected, payment, collected, pending: Math.max(expected - collected, 0) });
+    metrics.collected += collectedArs ?? 0;
+    lines.push({
+      source,
+      expected,
+      expectedArs,
+      payment,
+      collected,
+      collectedArs,
+      pending: Math.max(expected - collected, 0),
+      pendingArs: expectedArs === null ? null : Math.max(expectedArs - (collectedArs ?? 0), 0)
+    });
   }
   const trackerCollected = collectedAmount(trackerTotal, trackerPayment);
-  metrics.collected += trackerCollected;
+  const trackerTotalArs = amountInArs(trackerTotal, normalizedTrackerCurrency, usdRate);
+  const trackerCollectedArs = amountInArs(trackerCollected, normalizedTrackerCurrency, usdRate);
+  if (trackerTotal > 0 && trackerTotalArs === null) metrics.unconvertedUsd += 1;
+  metrics.hours += trackerTotalArs ?? 0;
+  metrics.collected += trackerCollectedArs ?? 0;
   const total = metrics.mrr + metrics.projects + metrics.hours + metrics.fixed;
   metrics.total = total;
   metrics.pending = Math.max(total - metrics.collected, 0);
   metrics.trackerCollected = trackerCollected;
+  metrics.trackerTotalArs = trackerTotalArs;
+  metrics.trackerCollectedArs = trackerCollectedArs;
   return { metrics, lines };
 }
 
-export function exportBackup(settings, loadedMonths, sources, trackerPayments) {
+export function exportBackup(settings, loadedMonths, sources, trackerPayments, exchangeRate) {
   const months = {};
   listStorageKeys().forEach(key => {
     if (!key.startsWith('m-')) return;
@@ -382,12 +460,13 @@ export function exportBackup(settings, loadedMonths, sources, trackerPayments) {
   for (const [key, value] of loadedMonths.entries()) months[key] = { days: { ...value.days } };
   return {
     app: 'libreta-de-horas-hub',
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
-    settings: { rate: settings.rate, mult: settings.mult, hours: settings.hours, holidays: Array.from(settings.holidays) },
+    settings: { rate: settings.rate, rateCurrency: normalizeCurrency(settings.rateCurrency), mult: settings.mult, hours: settings.hours, holidays: Array.from(settings.holidays) },
     months,
     sources,
-    trackerPayments
+    trackerPayments,
+    exchangeRate: normalizeExchangeRate(exchangeRate)
   };
 }
 
@@ -418,6 +497,7 @@ export function parseBackup(text) {
     settings: backup.settings && typeof backup.settings === 'object' ? backup.settings : null,
     sources,
     trackerPayments: normalizePayments(backup.trackerPayments),
+    exchangeRate: backup.exchangeRate ? normalizeExchangeRate(backup.exchangeRate) : null,
     count: Object.keys(months).length
   };
 }
@@ -426,6 +506,7 @@ export function applyImportedSettings(current, incoming) {
   if (!incoming || typeof incoming !== 'object') return current;
   const next = { ...current, hours: current.hours.slice(), holidays: new Set(current.holidays) };
   if (Number.isFinite(incoming.rate) && incoming.rate >= 0) next.rate = incoming.rate;
+  if (VALID_CURRENCIES.has(incoming.rateCurrency)) next.rateCurrency = incoming.rateCurrency;
   if (Number.isFinite(incoming.mult) && incoming.mult >= 1 && incoming.mult <= 10) next.mult = incoming.mult;
   if (Array.isArray(incoming.hours) && incoming.hours.length === 7 && incoming.hours.every(value => Number.isFinite(value) && value >= 0 && value <= 24)) next.hours = incoming.hours.slice();
   if (Array.isArray(incoming.holidays)) next.holidays = new Set(incoming.holidays.filter(isValidDate));
