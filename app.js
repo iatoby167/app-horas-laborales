@@ -15,6 +15,7 @@ import {
   daysInMonth,
   exportBackup,
   getPaymentForPeriod,
+  getRateForPeriod,
   getTrackerPayment,
   isValidDate,
   listStorageKeys,
@@ -38,6 +39,7 @@ import {
   saveSources,
   saveTrackerPayments,
   saveUiPreferences,
+  setRateForPeriod,
   setPaymentForPeriod,
   shiftMonth,
   sourceAmountForPeriod,
@@ -62,6 +64,7 @@ const EXCHANGE_RATE_MAX_AGE = 6 * 60 * 60 * 1000;
 
 const elements = {
   nav: $('#mainNav'),
+  controlbar: $('.controlbar'),
   sidebar: $('#appSidebar'),
   sidebarScrim: $('#sidebarScrim'),
   menuToggle: $('#menuToggle'),
@@ -130,6 +133,30 @@ const FILTERS = {
 };
 
 const desktopQuery = window.matchMedia('(min-width: 1024px)');
+let lastScrollY = Math.max(window.scrollY, 0);
+let controlbarScrollTicking = false;
+
+function showControlbar() {
+  document.body.classList.remove('controls-hidden');
+}
+
+function updateControlbarVisibility() {
+  if (controlbarScrollTicking) return;
+  controlbarScrollTicking = true;
+  window.requestAnimationFrame(() => {
+    const currentY = Math.max(window.scrollY, 0);
+    const distance = currentY - lastScrollY;
+    if (currentY <= 72) {
+      showControlbar();
+      lastScrollY = currentY;
+    } else if (Math.abs(distance) >= 8) {
+      if (distance > 0 && !elements.controlbar.contains(document.activeElement)) document.body.classList.add('controls-hidden');
+      if (distance < 0) showControlbar();
+      lastScrollY = currentY;
+    }
+    controlbarScrollTicking = false;
+  });
+}
 
 function sidebarIsPinned() {
   return state.sidebar.sidebarPinned && desktopQuery.matches;
@@ -272,8 +299,12 @@ function currentDays() {
   return ensureMonth().days;
 }
 
+function currentRate() {
+  return getRateForPeriod(state.settings, state.period);
+}
+
 function currentTracker() {
-  return calculateMonth(currentDays(), state.settings.holidays, state.settings.rate, state.settings.mult);
+  return calculateMonth(currentDays(), state.settings.holidays, currentRate().rate, state.settings.mult);
 }
 
 function currentTrackerPayment() {
@@ -282,13 +313,14 @@ function currentTrackerPayment() {
 
 function currentHub() {
   const tracker = currentTracker();
+  const rate = currentRate();
   return calculateHub(
     state.sources,
     state.period,
     tracker.total,
     currentTrackerPayment(),
     state.exchangeRate.rate,
-    state.settings.rateCurrency
+    rate.currency
   );
 }
 
@@ -411,8 +443,17 @@ function paymentBadge(payment) {
   return `<span class="badge payment ${escapeHtml(payment.status)}">${escapeHtml(PAYMENT_STATES[payment.status])}</span>`;
 }
 
-function projectBadge(status) {
-  return `<span class="badge project ${escapeHtml(status)}">${escapeHtml(PROJECT_STATES[status])}</span>`;
+function projectBadge(status, source, quickToggle = false) {
+  const canToggle = quickToggle
+    && source
+    && ['saas', 'project'].includes(source.type)
+    && ['development', 'active', 'paused'].includes(status);
+  if (!canToggle) return `<span class="badge project ${escapeHtml(status)}">${escapeHtml(PROJECT_STATES[status])}</span>`;
+
+  const isActive = status === 'active';
+  const action = isActive ? 'Pausar' : 'Activar';
+  const sourceName = escapeHtml(sourceTitle(source));
+  return `<button class="badge project ${escapeHtml(status)} status-toggle" type="button" data-action="toggle-source-status" data-id="${escapeHtml(source.id)}" aria-pressed="${String(isActive)}" aria-label="${action} ${sourceName}" title="${action} ${sourceName}">${escapeHtml(PROJECT_STATES[status])}</button>`;
 }
 
 function typeBadge(type) {
@@ -441,7 +482,7 @@ function meetsFilter(source) {
   return state.filter === 'paid' ? payment.status === 'paid' : payment.status !== 'paid';
 }
 
-function renderSourceCard(source, compactCard = false) {
+function renderSourceCard(source, compactCard = false, quickToggle = false) {
   const expected = sourceAmountForPeriod(source, state.period);
   const payment = getPaymentForPeriod(source, state.period);
   const collected = collectedAmount(expected, payment);
@@ -457,7 +498,7 @@ function renderSourceCard(source, compactCard = false) {
     <article class="income-card ${compactCard ? 'compact' : ''}" data-source-card="${escapeHtml(source.id)}">
       <div class="card-topline">
         <span class="badge-group">${typeBadge(source.type)}${currencyBadge(source.currency)}</span>
-        <div class="badge-group">${projectBadge(source.projectStatus)}${paymentBadge(payment)}</div>
+        <div class="badge-group">${projectBadge(source.projectStatus, source, quickToggle)}${paymentBadge(payment)}</div>
       </div>
       <div class="card-heading">
         <div>
@@ -502,7 +543,7 @@ function renderTrackerWidget({ large = false } = {}) {
   const tracker = currentTracker();
   const payment = currentTrackerPayment();
   const collected = collectedAmount(tracker.total, payment);
-  const currency = state.settings.rateCurrency;
+  const currency = currentRate().currency;
   const convertedTotal = arsConversionLabel(tracker.total, currency);
   const convertedCollected = arsConversionLabel(collected, currency);
   return `
@@ -574,12 +615,12 @@ function renderDashboard() {
     </section>
     <section class="module-section animate-in" style="--delay:280ms">
       <div class="section-header"><div><p class="section-kicker">Recurrente</p><h2>Micro-SaaS & suscripciones</h2></div><button class="text-button" type="button" data-action="go-route" data-route="saas">Ver todo</button></div>
-      <div class="card-grid">${saas.length ? saas.slice(0, 3).map(source => renderSourceCard(source, true)).join('') : renderEmpty('Todavía no hay suscripciones', 'Agregá tu primer Micro-SaaS o mantenimiento activo.')}</div>
+      <div class="card-grid">${saas.length ? saas.slice(0, 3).map(source => renderSourceCard(source, true, true)).join('') : renderEmpty('Todavía no hay suscripciones', 'Agregá tu primer Micro-SaaS o mantenimiento activo.')}</div>
     </section>
     <section class="module-section two-columns animate-in" style="--delay:330ms">
       <div>
         <div class="section-header"><div><p class="section-kicker">Pago único</p><h2>Desarrollos puntuales</h2></div><button class="text-button" type="button" data-action="go-route" data-route="projects">Ver todo</button></div>
-        <div class="stack-list">${projects.length ? projects.slice(0, 3).map(source => renderSourceCard(source, true)).join('') : renderEmpty('Sin proyectos en este período', 'Usá una fecha estimada para proyectar un desarrollo.')}</div>
+        <div class="stack-list">${projects.length ? projects.slice(0, 3).map(source => renderSourceCard(source, true, true)).join('') : renderEmpty('Sin proyectos en este período', 'Usá una fecha estimada para proyectar un desarrollo.')}</div>
       </div>
       <div>
         <div class="section-header"><div><p class="section-kicker">Complementos</p><h2>Fijos & extras</h2></div><button class="text-button" type="button" data-action="new-source">Agregar</button></div>
@@ -634,8 +675,12 @@ function renderCalendar() {
 function renderHours() {
   const tracker = currentTracker();
   const payment = currentTrackerPayment();
-  const currency = state.settings.rateCurrency;
+  const rate = currentRate();
+  const currency = rate.currency;
   const convertedTotal = arsConversionLabel(tracker.total, currency);
+  const rateScopeNote = rate.isMonthly
+    ? `Tarifa guardada solo para ${formatMonth().toLowerCase()}.`
+    : `Todavía usa la tarifa base. Al cambiarla quedará guardada solo para ${formatMonth().toLowerCase()}.`;
   return `
     <section class="page-heading">
       <div><p class="eyebrow">Módulo integrado</p><h1>Tracker de horas & servicios</h1><p class="lede">El contador original sigue acá y aporta automáticamente al estimado mensual del Hub.</p></div>
@@ -659,8 +704,9 @@ function renderHours() {
     <section class="calendar-panel">
       <div class="calendar-toolbar">
         <div><p class="section-kicker">${formatMonth()}</p><h2>Registro diario</h2></div>
-        <label class="rate-field">Valor hora <span class="rate-inputs"><input id="rateInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(state.settings.rate))}" placeholder="0"><select id="rateCurrency" aria-label="Moneda de la tarifa por hora"><option value="ARS" ${currency === 'ARS' ? 'selected' : ''}>ARS</option><option value="USD" ${currency === 'USD' ? 'selected' : ''}>USD</option></select></span></label>
+        <label class="rate-field">Valor hora <span class="rate-inputs"><input id="rateInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(rate.rate))}" placeholder="0"><select id="rateCurrency" aria-label="Moneda de la tarifa por hora"><option value="ARS" ${currency === 'ARS' ? 'selected' : ''}>ARS</option><option value="USD" ${currency === 'USD' ? 'selected' : ''}>USD</option></select></span></label>
       </div>
+      <p class="rate-period-note">${escapeHtml(rateScopeNote)}</p>
       <div class="mode-tabs" role="group" aria-label="Modo del calendario">
         <button type="button" data-action="mode" data-mode="work" aria-pressed="${state.mode === 'work'}">Trabajé</button>
         <button type="button" data-action="mode" data-mode="holiday" aria-pressed="${state.mode === 'holiday'}">Feriado</button>
@@ -737,6 +783,7 @@ function render() {
 function setRoute(route) {
   if (!ROUTES[route]) return;
   state.route = route;
+  showControlbar();
   render();
   closeDrawerAfterNavigation();
   window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
@@ -838,6 +885,18 @@ function removeSource(id) {
   state.sources = state.sources.filter(item => item.id !== id);
   saveCurrentSources();
   closeDialog(elements.sourceDialog);
+  render();
+}
+
+function toggleSourceStatus(id) {
+  const source = state.sources.find(item => item.id === id);
+  if (!source || !['saas', 'project'].includes(source.type) || !['development', 'active', 'paused'].includes(source.projectStatus)) return;
+  const nextStatus = source.projectStatus === 'active' ? 'paused' : 'active';
+  state.sources = state.sources.map(item => item.id === id
+    ? { ...item, projectStatus: nextStatus, updatedAt: new Date().toISOString() }
+    : item);
+  const saved = saveSources(state.sources);
+  setStatus(saved ? `${sourceTitle(source)} ${nextStatus === 'active' ? 'activado' : 'pausado'}` : 'No se pudo guardar el cambio', saved ? 'saved' : 'error');
   render();
 }
 
@@ -961,14 +1020,14 @@ function updateTrackerPayment(event) {
 function updateRate(input) {
   const value = parseNumber(input.value);
   if (!Number.isFinite(value) || value < 0) return;
-  state.settings.rate = value;
+  state.settings = setRateForPeriod(state.settings, state.period, value, currentRate().currency);
   persist(saveSettings(state.settings));
   render();
 }
 
 function updateRateCurrency(input) {
   if (!CURRENCIES[input.value]) return;
-  state.settings.rateCurrency = input.value;
+  state.settings = setRateForPeriod(state.settings, state.period, currentRate().rate, input.value);
   persist(saveSettings(state.settings));
   render();
 }
@@ -1060,6 +1119,7 @@ function handleAction(action, target) {
   switch (action) {
     case 'new-source': openSourceModal('', target.dataset.type || ''); break;
     case 'edit-source': openSourceModal(target.dataset.id); break;
+    case 'toggle-source-status': toggleSourceStatus(target.dataset.id); break;
     case 'go-route': setRoute(target.dataset.route); break;
     case 'go-hours': setRoute('hours'); break;
     case 'day': onDay(target.dataset.date); break;
@@ -1091,6 +1151,8 @@ elements.nav.addEventListener('click', event => {
 
 elements.addSource.addEventListener('click', () => openSourceModal());
 elements.refreshExchangeRate.addEventListener('click', () => refreshExchangeRate());
+elements.controlbar.addEventListener('focusin', showControlbar);
+window.addEventListener('scroll', updateControlbarVisibility, { passive: true });
 elements.periodInput.addEventListener('change', event => changePeriod(event.target.value));
 $('#prevPeriod').addEventListener('click', () => changePeriod(shiftMonth(state.period, -1)));
 $('#nextPeriod').addEventListener('click', () => changePeriod(shiftMonth(state.period, 1)));
@@ -1157,7 +1219,10 @@ elements.cancelImport.addEventListener('click', () => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && !state.editingDate) render();
+  if (document.visibilityState === 'visible') {
+    lastScrollY = Math.max(window.scrollY, 0);
+    if (!state.editingDate) render();
+  }
 });
 
 document.addEventListener('keydown', event => {
