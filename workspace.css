@@ -19,6 +19,9 @@ details summary { cursor: pointer; padding: 12px 0; color: var(--ink); font-size
 .quick-grid .btn { white-space: normal; min-height: 48px; }
 .directory-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .directory-row:last-child { border-bottom: none; }
+.expense-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.expense-payment { min-height: 44px; }
+.expense-payment.is-paid { background: var(--accent-soft); color: var(--ink); border-color: var(--accent); }
 .directory-row > div { display: grid; gap: 5px; min-width: 0; }
 .directory-row small, .directory-item small { display: block; color: var(--muted); overflow-wrap: anywhere; }
 .directory-row strong, .directory-item h3 { overflow-wrap: anywhere; }

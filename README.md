@@ -13,6 +13,7 @@ La app funciona como PWA: se puede instalar en el celular y queda disponible sin
 - **Proyectos y pagos únicos:** presupuesto, fecha estimada, categoría, estado y cobro parcial o total.
 - **Clientes y servicios:** contactos opcionales y tarifas generales o por cliente. Usar una tarifa copia su valor al trabajo; editarla no modifica trabajos existentes. Los servicios por horas nuevos pertenecen solo al mes donde se registran.
 - **Gastos opcionales:** categoría, moneda, fecha y estado pagado/pendiente, con balance mensual.
+- **Cobros y pagos rápidos:** el panel incluye el saldo pendiente de las horas registradas (también con cobro parcial). En Gastos podés marcar pagado o volver a pendiente directamente desde la lista; actualiza los totales sin modificar otros registros ni meses.
 - **Tracker de horas integrado:** conserva el calendario de horas y suma automáticamente su total al Hub.
 - **Ingresos fijos o extras:** cargos recurrentes o pagos únicos.
 - **Monedas:** ARS, USD, EUR, MXN, CLP, COP, UYU, BRL, PEN y GBP. Elegí la moneda principal y tasas manuales (valor de 1 unidad extranjera en la moneda principal). ARS/USD puede usar la referencia BCRA. Los importes sin tasa quedan fuera del total con una advertencia; cambiar la moneda principal vacía las tasas anteriores.
