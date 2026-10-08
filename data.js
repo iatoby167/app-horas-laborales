@@ -10,8 +10,8 @@ export const HOLIDAYS_2026 = [
 ];
 
 export const SOURCE_TYPES = {
-  saas: 'Micro-SaaS / Suscripción',
-  project: 'Desarrollo puntual',
+  saas: 'Suscripción / Servicio recurrente',
+  project: 'Proyecto / Pago único',
   hours: 'Servicio por horas',
   fixed: 'Ingreso fijo / extra'
 };
@@ -39,7 +39,15 @@ export const BILLING_CYCLES = {
 
 export const CURRENCIES = {
   ARS: 'Pesos argentinos (ARS)',
-  USD: 'Dólares estadounidenses (USD)'
+  USD: 'Dólares estadounidenses (USD)',
+  EUR: 'Euros (EUR)',
+  MXN: 'Pesos mexicanos (MXN)',
+  CLP: 'Pesos chilenos (CLP)',
+  COP: 'Pesos colombianos (COP)',
+  UYU: 'Pesos uruguayos (UYU)',
+  BRL: 'Reales brasileños (BRL)',
+  PEN: 'Soles peruanos (PEN)',
+  GBP: 'Libras esterlinas (GBP)'
 };
 
 const VALID_TYPES = new Set(Object.keys(SOURCE_TYPES));
@@ -104,11 +112,18 @@ export function dayOfWeek(value) {
   return date ? date.getDay() : 0;
 }
 
-export function parseNumber(value) {
+export function parseNumber(value, locale = 'es-AR') {
   let text = String(value ?? '').trim().replace(/[^\d.,-]/g, '');
   if (!text) return NaN;
-  if (text.includes(',')) text = text.replace(/\./g, '').replace(',', '.');
-  else if (/^\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
+  const decimal = new Intl.NumberFormat(locale).formatToParts(1.1).find(part => part.type === 'decimal').value;
+  if (text.includes(',') && text.includes('.')) {
+    const separator = text.lastIndexOf(',') > text.lastIndexOf('.') ? ',' : '.';
+    text = text.split(separator === ',' ? '.' : ',').join('').replace(separator, '.');
+  } else if (decimal === '.') {
+    if (/^-?\d{1,3}(,\d{3})+$/.test(text)) text = text.replace(/,/g, '');
+    else text = text.replace(',', '.');
+  } else if (text.includes(',')) text = text.replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
   if (!/^-?\d+(\.\d+)?$/.test(text)) return NaN;
   const result = Number(text);
   return Number.isFinite(result) ? result : NaN;
@@ -125,11 +140,65 @@ function read(key) {
 
 function write(key, value) {
   try {
+    if (key !== 'ui' && !createSafetyBackup('Automática diaria')) return false;
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
     return true;
   } catch (_) {
     return false;
   }
+}
+
+export function listSafetyBackups() {
+  const backups = read('safety');
+  return Array.isArray(backups) ? backups.filter(item => item?.id && item?.data) : [];
+}
+
+export function createSafetyBackup(reason = 'Antes de un cambio', force = false) {
+  try {
+    const backups = listSafetyBackups();
+    if (!force && backups.some(item => item.day === todayString())) return true;
+    const data = {};
+    for (const key of listStorageKeys()) {
+      if (key === 'safety' || key === 'probe') continue;
+      const value = localStorage.getItem(STORAGE_PREFIX + key);
+      if (value !== null) data[key] = value;
+    }
+    if (!Object.keys(data).length) return true;
+    backups.unshift({ id: createId(), day: todayString(), at: new Date().toISOString(), reason, data });
+    localStorage.setItem(STORAGE_PREFIX + 'safety', JSON.stringify(backups.slice(0, 7)));
+    return true;
+  } catch (_) { return false; }
+}
+
+// Agrupa escrituras locales. Ante un fallo libera lo escrito antes de reponer
+// los valores originales, para que un límite de cuota no deje datos mezclados.
+export function storageTransaction(operation) {
+  const previous = {};
+  try {
+    for (const key of listStorageKeys().filter(key => key !== 'safety')) previous[key] = localStorage.getItem(STORAGE_PREFIX + key);
+  } catch (_) { return false; }
+  try {
+    if (operation() === false) throw new Error('No se pudo guardar');
+    return true;
+  } catch (_) {
+    for (const key of listStorageKeys().filter(key => key !== 'safety')) localStorage.removeItem(STORAGE_PREFIX + key);
+    for (const [key, value] of Object.entries(previous)) localStorage.setItem(STORAGE_PREFIX + key, value);
+    return false;
+  }
+}
+
+export function restoreSafetyBackup(id) {
+  const backup = listSafetyBackups().find(item => item.id === id);
+  if (!backup || !createSafetyBackup('Antes de restaurar', true)) return false;
+  return storageTransaction(() => {
+    const keys = listStorageKeys().filter(key => key !== 'safety');
+    for (const key of keys) localStorage.removeItem(STORAGE_PREFIX + key);
+    for (const [key, value] of Object.entries(backup.data)) {
+      if (key === 'safety' || typeof value !== 'string') continue;
+      localStorage.setItem(STORAGE_PREFIX + key, value);
+    }
+    return true;
+  });
 }
 
 export function storageWorks() {
@@ -160,7 +229,7 @@ export function clearAllData() {
     const keys = [];
     for (let index = 0; index < localStorage.length; index += 1) {
       const key = localStorage.key(index);
-      if (key && key.startsWith(STORAGE_PREFIX)) keys.push(key);
+      if (key && key.startsWith(STORAGE_PREFIX) && key !== STORAGE_PREFIX + 'safety') keys.push(key);
     }
     keys.forEach(key => localStorage.removeItem(key));
     return keys.every(key => localStorage.getItem(key) === null);
@@ -176,8 +245,8 @@ export function loadSettings() {
     rateCurrency: 'ARS',
     monthlyRates: {},
     mult: DEFAULT_MULT,
-    hours: DEFAULT_HOURS.slice(),
-    holidays: new Set(HOLIDAYS_2026)
+    hours: [0, 8, 8, 8, 8, 8, 0],
+    holidays: new Set(raw ? HOLIDAYS_2026 : [])
   };
   if (!raw || typeof raw !== 'object') return settings;
   if (Number.isFinite(raw.rate) && raw.rate >= 0) settings.rate = raw.rate;
@@ -287,6 +356,7 @@ export function amountInArs(amount, currency = 'ARS', usdRate = 0) {
   const numericAmount = Number(amount);
   if (!Number.isFinite(numericAmount)) return null;
   if (numericAmount === 0 || normalizeCurrency(currency) === 'ARS') return numericAmount;
+  if (currency !== 'USD') return null;
   const numericRate = Number(usdRate);
   if (!(numericRate > 0)) return null;
   return Math.round(numericAmount * numericRate * 100) / 100;
@@ -388,6 +458,16 @@ export function normalizeSource(value = {}) {
     projectStatus: type === 'saas' ? 'active' : projectStatus,
     startPeriod,
     statuses,
+    clientId: typeof value.clientId === 'string' ? value.clientId.slice(0, 80) : '',
+    period: parseMonthKey(value.period) ? value.period : '',
+    serviceId: typeof value.serviceId === 'string' ? value.serviceId.slice(0, 80) : '',
+    category: typeof value.category === 'string' ? value.category.trim().slice(0, 60) : '',
+    deletedAt: typeof value.deletedAt === 'string' ? value.deletedAt : '',
+    billingMode: value.billingMode === 'scheduled' ? 'scheduled' : 'monthlyEquivalent',
+    startsOn: isValidDate(value.startsOn) ? value.startsOn : '',
+    endsOn: isValidDate(value.endsOn) ? value.endsOn : '',
+    cancelledFrom: parseMonthKey(value.cancelledFrom) ? value.cancelledFrom : '',
+    dueDay: Math.min(31, Math.max(1, Math.round(Number(value.dueDay) || 1))),
     expectedDate: isValidDate(value.expectedDate) ? value.expectedDate : '',
     url: typeof value.url === 'string' ? value.url.trim().slice(0, 300) : '',
     notes: typeof value.notes === 'string' ? value.notes.trim().slice(0, 1500) : '',
@@ -463,7 +543,11 @@ function projectPeriodDate(source) {
 }
 
 export function sourceIsVisibleInPeriod(source, period) {
-  if (source.type === 'saas') return Boolean(parseMonthKey(period)) && period >= subscriptionStartPeriod(source);
+  if (source.deletedAt) return false;
+  if (source.type === 'hours' && source.period) return period === source.period;
+  if (source.type === 'saas') return Boolean(parseMonthKey(period)) && period >= subscriptionStartPeriod(source)
+    && (!source.endsOn || period <= monthKeyFromDate(source.endsOn))
+    && (!source.cancelledFrom || period < source.cancelledFrom);
   if (source.type === 'project') {
     const date = projectPeriodDate(source);
     return date ? monthKeyFromDate(date) === period : period === todayKey();
@@ -477,7 +561,8 @@ export function sourceIsVisibleInPeriod(source, period) {
 export function sourceAmountForPeriod(source, period) {
   const status = getStatusForPeriod(source, period);
   if (!sourceIsVisibleInPeriod(source, period) || status === 'paused') return 0;
-  if (source.type === 'saas') return status === 'active' ? toMonthlyAmount(source) : 0;
+  if (source.type === 'saas') return status === 'active'
+    ? (source.billingMode === 'scheduled' ? source.amount * recurringDates(source, period).length : toMonthlyAmount(source)) : 0;
   if (source.type === 'project') return source.amount;
   if (source.type === 'hours') {
     if (source.billingCycle === 'once' && source.expectedDate && monthKeyFromDate(source.expectedDate) !== period) return 0;
@@ -485,6 +570,28 @@ export function sourceAmountForPeriod(source, period) {
   }
   if (source.billingCycle === 'once' && source.expectedDate && monthKeyFromDate(source.expectedDate) !== period) return 0;
   return source.billingCycle === 'once' ? source.amount : toMonthlyAmount(source);
+}
+
+export function recurringDates(source, period) {
+  if (!parseMonthKey(period) || !sourceIsVisibleInPeriod(source, period)) return [];
+  const start = source.startsOn || `${subscriptionStartPeriod(source)}-01`;
+  const { year, month } = parseMonthKey(period);
+  if (source.billingCycle === 'weekly') {
+    const anchor = Date.UTC(...[Number(start.slice(0, 4)), Number(start.slice(5, 7)) - 1, Number(start.slice(8, 10))]);
+    const dates = [];
+    for (let day = 1; day <= daysInMonth(year, month); day++) {
+      const value = ymd(year, month, day);
+      const diff = (Date.UTC(year, month - 1, day) - anchor) / 86400000;
+      if (diff >= 0 && diff % 7 === 0 && (!source.endsOn || value <= source.endsOn)) dates.push(value);
+    }
+    return dates;
+  }
+  const origin = parseMonthKey(monthKeyFromDate(start));
+  const distance = (year - origin.year) * 12 + month - origin.month;
+  const step = source.billingCycle === 'quarterly' ? 3 : source.billingCycle === 'annual' ? 12 : 1;
+  if (distance < 0 || distance % step !== 0 || (source.billingCycle === 'once' && distance !== 0)) return [];
+  const date = ymd(year, month, Math.min(source.dueDay || Number(start.slice(8, 10)), daysInMonth(year, month)));
+  return date >= start && (!source.endsOn || date <= source.endsOn) ? [date] : [];
 }
 
 export function collectedAmount(expected, payment) {
@@ -514,7 +621,7 @@ export function calculateMonth(days, holidays, rate, mult) {
   };
 }
 
-export function calculateHub(sources, period, trackerTotal, trackerPayment, usdRate = 0, trackerCurrency = 'ARS') {
+export function calculateHub(sources, period, trackerTotal, trackerPayment, usdRate = 0, trackerCurrency = 'ARS', convert = (amount, currency) => amountInArs(amount, currency, usdRate)) {
   const normalizedTrackerCurrency = normalizeCurrency(trackerCurrency);
   const metrics = {
     mrr: 0,
@@ -538,8 +645,8 @@ export function calculateHub(sources, period, trackerTotal, trackerPayment, usdR
     const expected = sourceAmountForPeriod(source, period);
     const payment = getPaymentForPeriod(source, period);
     const collected = collectedAmount(expected, payment);
-    const expectedArs = amountInArs(expected, source.currency, usdRate);
-    const collectedArs = amountInArs(collected, source.currency, usdRate);
+    const expectedArs = convert(expected, source.currency);
+    const collectedArs = convert(collected, source.currency);
     const amountForMetric = expectedArs ?? 0;
     if (expected > 0 && expectedArs === null) metrics.unconvertedUsd += 1;
     if (source.type === 'saas') metrics.mrr += amountForMetric;
@@ -560,8 +667,8 @@ export function calculateHub(sources, period, trackerTotal, trackerPayment, usdR
     });
   }
   const trackerCollected = collectedAmount(trackerTotal, trackerPayment);
-  const trackerTotalArs = amountInArs(trackerTotal, normalizedTrackerCurrency, usdRate);
-  const trackerCollectedArs = amountInArs(trackerCollected, normalizedTrackerCurrency, usdRate);
+  const trackerTotalArs = convert(trackerTotal, normalizedTrackerCurrency);
+  const trackerCollectedArs = convert(trackerCollected, normalizedTrackerCurrency);
   if (trackerTotal > 0 && trackerTotalArs === null) metrics.unconvertedUsd += 1;
   metrics.hours += trackerTotalArs ?? 0;
   metrics.collected += trackerCollectedArs ?? 0;
@@ -584,7 +691,7 @@ export function exportBackup(settings, loadedMonths, sources, trackerPayments, e
   for (const [key, value] of loadedMonths.entries()) months[key] = { days: { ...value.days } };
   return {
     app: 'libreta-de-horas-hub',
-    version: 5,
+    version: 6,
     exportedAt: new Date().toISOString(),
     settings: {
       rate: settings.rate,
@@ -596,6 +703,7 @@ export function exportBackup(settings, loadedMonths, sources, trackerPayments, e
     },
     months,
     sources,
+    workspace: read('hub:workspace'),
     trackerPayments,
     exchangeRate: normalizeExchangeRate(exchangeRate)
   };
@@ -627,6 +735,7 @@ export function parseBackup(text) {
     months,
     settings: backup.settings && typeof backup.settings === 'object' ? backup.settings : null,
     sources,
+    workspace: backup.workspace && typeof backup.workspace === 'object' ? backup.workspace : null,
     trackerPayments: normalizePayments(backup.trackerPayments),
     exchangeRate: backup.exchangeRate ? normalizeExchangeRate(backup.exchangeRate) : null,
     count: Object.keys(months).length

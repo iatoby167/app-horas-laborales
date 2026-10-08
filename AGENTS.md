@@ -13,6 +13,6 @@ El usuario pidió que, de ahora en adelante, cada cambio de la app se suba a Git
 
 ## Verificación local
 
-`npm test`, `npm run test:updates-ui`, `npm run test:ui`.
+`npm test`, `npm run test:updates-ui`, `npm run test:ui`, `npm run test:workspace-ui`.
 `npm run dist:prueba` genera un instalador local de prueba sin publicar.
 `npm run dist` genera el instalador normal sin publicar; no promoverlo sin autorización explícita.

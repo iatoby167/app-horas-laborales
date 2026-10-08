@@ -234,8 +234,8 @@ function createPage(report, continuation) {
   const cardGap = 10;
   const cardWidth = (PAGE_WIDTH - (MARGIN * 2) - (cardGap * 3)) / 4;
   const cardY = 433;
-  drawSummaryCard(ops, MARGIN, cardY, cardWidth, 'MRR activo', report.totals.mrr);
-  drawSummaryCard(ops, MARGIN + cardWidth + cardGap, cardY, cardWidth, 'Desarrollos', report.totals.projects);
+  drawSummaryCard(ops, MARGIN, cardY, cardWidth, 'Recurrentes', report.totals.mrr);
+  drawSummaryCard(ops, MARGIN + cardWidth + cardGap, cardY, cardWidth, 'Proyectos', report.totals.projects);
   drawSummaryCard(ops, MARGIN + (cardWidth + cardGap) * 2, cardY, cardWidth, 'Total estimado', report.totals.total);
   drawSummaryCard(ops, MARGIN + (cardWidth + cardGap) * 3, cardY, cardWidth, 'Cobrado', report.totals.collected, `Pendiente ${report.totals.pending}`);
 

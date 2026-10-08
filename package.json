@@ -4,12 +4,14 @@
   "description": "Hub personal para controlar ingresos, proyectos, cobros y horas trabajadas.",
   "private": true,
   "main": "main.cjs",
+  "type": "module",
   "author": "Hub de Ingresos",
   "license": "MIT",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "test:ui": "electron tests/subscriptions-ui.cjs",
     "test:updates-ui": "electron tests/desktop-updates-ui.cjs",
+    "test:workspace-ui": "electron tests/workspace-ui.cjs",
     "start": "electron .",
     "dist": "electron-builder --win nsis --publish never",
     "dist:portable": "electron-builder --win portable --publish never",
@@ -36,6 +38,9 @@
       "desktop-updater.cjs",
       "desktop-distribution.cjs",
       "desktop-updates.js",
+      "workspace.js",
+      "workspace-ui.js",
+      "workspace.css",
       "package.json"
     ],
     "publish": {

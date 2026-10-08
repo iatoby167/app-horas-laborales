@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Libreta de Horas · Hub financiero</title>
-<meta name="description" content="Hub personal de ingresos, proyectos, Micro-SaaS, cobros y horas trabajadas.">
+<title>Hub de Ingresos · Tu actividad en orden</title>
+<meta name="description" content="Tu actividad en orden: ingresos, clientes, servicios, gastos y horas en un espacio configurable.">
 <meta name="theme-color" content="#E9EEEA" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1411" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="workspace.css">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -746,6 +747,8 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
         <button class="sidebar-nav-item" type="button" data-route="projects" aria-current="false" aria-label="Desarrollos puntuales">
           <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 10h18"/></svg></span><span class="sidebar-nav-label">Desarrollos <em>Pago único</em></span>
         </button>
+        <button class="sidebar-nav-item" type="button" data-route="clients" aria-current="false" aria-label="Clientes y servicios"><span class="sidebar-nav-icon" aria-hidden="true">♧</span><span class="sidebar-nav-label">Clientes y servicios</span></button>
+        <button class="sidebar-nav-item" type="button" data-route="expenses" aria-current="false" aria-label="Gastos"><span class="sidebar-nav-icon" aria-hidden="true">−</span><span class="sidebar-nav-label">Gastos</span></button>
         <button class="sidebar-nav-item" type="button" data-route="settings" aria-current="false" aria-label="Configuración y ajustes">
           <span class="sidebar-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.1 2.1-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-3v-.09A1.7 1.7 0 0 0 10.7 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.1-2.1.06-.06A1.7 1.7 0 0 0 7.06 15 1.7 1.7 0 0 0 5.5 14H5v-3h.5a1.7 1.7 0 0 0 1.56-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.1-2.1.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.03-1.55V4h3v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.1 2.1-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.56 1h.04v3h-.04A1.7 1.7 0 0 0 19.4 15Z"/></svg></span><span class="sidebar-nav-label">Configuración <em>Ajustes &amp; copias</em></span>
         </button>
@@ -813,17 +816,20 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
       <form id="sourceForm" novalidate>
         <input type="hidden" name="id">
         <div class="dialog-grid">
-          <label class="full">Nombre de la app, proyecto o cliente
+          <label class="full">Nombre del ingreso
             <input name="name" maxlength="120" autocomplete="off" required placeholder="Ej. Mantenimiento Tienda Norte">
           </label>
           <label>Tipo de ingreso
             <select name="type">
-              <option value="saas">Micro-SaaS / Suscripción</option>
-              <option value="project">Desarrollo puntual (pago único)</option>
+              <option value="saas">Servicio recurrente / Suscripción</option>
+              <option value="project">Proyecto / Pago único</option>
               <option value="hours">Servicio por horas / Freelance</option>
               <option value="fixed">Ingreso fijo / Extra</option>
             </select>
           </label>
+          <label>Cliente (opcional)<select name="clientId"><option value="">Sin cliente</option></select></label>
+          <label>Usar tarifa guardada (opcional)<select name="serviceId"><option value="">Carga manual</option></select></label>
+          <label>Categoría (opcional)<input name="category" maxlength="60" placeholder="Ej. Clases, diseño, mantenimiento"></label>
           <label id="sourceAmountWrap"><span id="sourceAmountLabel">Monto</span>
             <input name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
           </label>
@@ -845,6 +851,15 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
           <label id="sourceClientsWrap">Suscriptores / clientes
             <input name="clients" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
           </label>
+          <fieldset id="sourceRecurrenceWrap" class="full recurrence-fields"><legend>Calendario del servicio recurrente</legend><div class="form-grid">
+            <label>Fecha de inicio<input name="startsOn" type="date"></label>
+            <label>Día de vencimiento<input name="dueDay" type="number" min="1" max="31" value="1"></label>
+            <details class="full"><summary>Finalización y opciones avanzadas</summary><div class="form-grid">
+            <label>Finaliza el (opcional)<input name="endsOn" type="date"></label>
+            <label>Cómo calcular el importe<select name="billingMode"><option value="scheduled">Cobrar el ciclo en su mes de vencimiento</option><option value="monthlyEquivalent">Mostrar equivalente mensual (modo anterior)</option></select></label>
+            <label>Cancelar desde (opcional)<input name="cancelledFrom" type="month"></label>
+            </div></details>
+          </div><p class="note">Pausar en «Estado en este mes» afecta solo ese mes. Cancelar desde una fecha excluye ese mes y todos los siguientes. Si el mes no tiene el día elegido, vence el último día.</p></fieldset>
           <label id="sourceHoursWrap">Horas estimadas del período
             <input name="estimatedHours" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
           </label>
@@ -869,12 +884,13 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
           <label><span id="sourceDateLabel">Fecha estimada de cobro</span>
             <input name="expectedDate" type="date">
           </label>
-          <label class="full">Enlace del proyecto (opcional)
+          <details class="full source-details"><summary>Enlace y notas opcionales</summary><div class="form-grid"><label class="full">Enlace del proyecto (opcional)
             <input name="url" type="url" inputmode="url" autocomplete="url" placeholder="https://...">
           </label>
           <label class="full">Notas adicionales
             <textarea name="notes" maxlength="1500" placeholder="Alcance, próximo paso, detalle de cobro…"></textarea>
           </label>
+          </div></details>
           <p id="sourceCurrencyHint" class="field-note full" hidden></p>
           <p id="sourcePeriodHint" class="field-note full" hidden></p>
         </div>

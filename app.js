@@ -11,6 +11,7 @@ import {
   clearAllData,
   collectedAmount,
   createId,
+  createSafetyBackup,
   dateOf,
   dayOfWeek,
   daysInMonth,
@@ -19,6 +20,7 @@ import {
   getRateForPeriod,
   getStatusForPeriod,
   getTrackerPayment,
+  recurringDates,
   isValidDate,
   listStorageKeys,
   loadExchangeRate,
@@ -33,8 +35,9 @@ import {
   normalizeSource,
   pad,
   parseBackup,
+  storageTransaction,
   parseMonthKey,
-  parseNumber,
+  parseNumber as parseLocaleNumber,
   saveMonth,
   saveExchangeRate,
   saveSettings,
@@ -54,6 +57,8 @@ import {
 } from './data.js';
 import { buildMonthlyInvoicePdf } from './pdf-report.js';
 import { initDesktopUpdates, renderDesktopUpdateCard } from './desktop-updates.js';
+import { loadWorkspace, saveWorkspace, normalizeWorkspace, convertAmount, moneyFor, dateFor, expenseSummary } from './workspace.js';
+import { createWorkspaceUI, currencyOptions } from './workspace-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
@@ -102,6 +107,7 @@ const elements = {
 };
 
 const state = {
+  workspace: loadWorkspace(),
   route: 'hub',
   period: todayKey(),
   filter: 'all',
@@ -124,11 +130,36 @@ const state = {
 
 const ROUTES = {
   hub: 'Hub',
-  saas: 'Micro-SaaS',
-  projects: 'Desarrollos',
+  saas: 'Ingresos recurrentes',
+  projects: 'Proyectos',
   hours: 'Consultorio',
-  settings: 'Ajustes'
+  settings: 'Ajustes',
+  clients: 'Clientes y servicios',
+  expenses: 'Gastos'
 };
+
+const workspaceUI = createWorkspaceUI({ state, render, setRoute, setStatus, formatCurrency, formatMonth, currentHub, currentTracker,
+  sourcesFor, renderSourceCard, renderTrackerWidget, typeLabel, openSource: openSourceModal, preferencesChanged: applyWorkspacePreferences });
+
+function typeLabel(type) {
+  return state.workspace.profile.labels[{ hours: 'hours', saas: 'saas', project: 'projects' }[type]] || SOURCE_TYPES[type];
+}
+
+function applyWorkspacePreferences() {
+  const profile = state.workspace.profile;
+  ROUTES.hours = profile.labels.hours; ROUTES.saas = profile.labels.saas; ROUTES.projects = profile.labels.projects;
+  elements.nav.querySelectorAll('[data-route]').forEach(button => {
+    const route = button.dataset.route;
+    button.hidden = profile.modules[route] === false;
+    button.setAttribute('aria-label', ROUTES[route]);
+    const label = button.querySelector('.sidebar-nav-label');
+    if (label) label.textContent = ROUTES[route];
+  });
+  if (profile.modules[state.route] === false) state.route = 'hub';
+  document.documentElement.lang = profile.locale;
+  document.querySelector('.brand').textContent = profile.name || 'Hub de Ingresos';
+  elements.exchangeRateControl.hidden = !['ARS', 'USD'].includes(profile.currency);
+}
 
 const FILTERS = {
   all: 'Todo',
@@ -255,6 +286,12 @@ function setStatus(message, kind = 'idle') {
     elements.status.textContent = message;
     elements.status.dataset.state = kind;
   }
+  if (kind === 'saved' || kind === 'error') {
+    let toast = $('#appToast');
+    if (!toast) { toast = document.createElement('div'); toast.id = 'appToast'; toast.className = 'app-toast'; toast.setAttribute('role', 'status'); document.body.append(toast); }
+    toast.textContent = message; toast.hidden = false;
+    clearTimeout(setStatus.toastTimer); setStatus.toastTimer = setTimeout(() => { toast.hidden = true; }, kind === 'error' ? 7000 : 3500);
+  }
 }
 
 function persist(ok) {
@@ -280,7 +317,8 @@ function currentDays() {
 }
 
 function currentRate() {
-  return getRateForPeriod(state.settings, state.period);
+  const rate = getRateForPeriod(state.settings, state.period);
+  return rate.isMonthly ? rate : { ...rate, currency: state.workspace.profile.currency };
 }
 
 function currentTracker() {
@@ -300,26 +338,30 @@ function currentHub() {
     tracker.total,
     currentTrackerPayment(),
     state.exchangeRate.rate,
-    rate.currency
+    rate.currency,
+    (amount, currency) => convertAmount(amount, currency, state.workspace.profile, state.exchangeRate)
   );
 }
 
 function formatMonth(key = state.period) {
   const { year, month } = parseMonthKey(key) || currentParts();
-  return cap(monthYear.format(new Date(year, month - 1, 1)));
+  return cap(new Intl.DateTimeFormat(state.workspace.profile.locale, { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1)));
 }
 
 function formatInputNumber(value) {
-  return Number.isFinite(Number(value)) ? String(value).replace('.', ',') : '';
+  if (!Number.isFinite(Number(value))) return '';
+  const decimal = new Intl.NumberFormat(state.workspace.profile.locale).formatToParts(1.1).find(part => part.type === 'decimal').value;
+  return String(value).replace('.', decimal);
 }
 
+function parseNumber(value) { return parseLocaleNumber(value, state.workspace.profile.locale); }
+
 function formatDate(value) {
-  const date = dateOf(value);
-  return date ? cap(shortDate.format(date)) : 'Sin fecha';
+  return dateFor(value, state.workspace.profile);
 }
 
 function formatCurrency(value, currency = 'ARS') {
-  return currency === 'USD' ? usdMoney.format(Number(value) || 0) : money.format(Number(value) || 0);
+  return moneyFor(value, currency, state.workspace.profile);
 }
 
 function currencyName(currency = 'ARS') {
@@ -335,9 +377,9 @@ function convertedToArs(amount, currency = 'ARS') {
 }
 
 function arsConversionLabel(amount, currency = 'ARS') {
-  if (currency !== 'USD') return '';
-  const converted = convertedToArs(amount, currency);
-  return converted === null ? 'Sin cotización oficial disponible' : `≈ ${money.format(converted)}`;
+  if (currency === state.workspace.profile.currency) return '';
+  const converted = convertAmount(amount, currency, state.workspace.profile, state.exchangeRate);
+  return converted === null ? 'Sin conversión configurada' : `≈ ${formatCurrency(converted, state.workspace.profile.currency)}`;
 }
 
 function exchangeRateIsStale() {
@@ -437,7 +479,7 @@ function trackerPaymentBadge(payment, expected) {
   if (!canToggle) return paymentBadge(payment);
 
   const isPaid = payment.status === 'paid';
-  const action = isPaid ? 'Marcar Consultorio como pendiente' : 'Marcar Consultorio como cobrado total';
+  const action = isPaid ? 'Marcar horas como pendientes' : 'Marcar horas como cobradas';
   return `<button class="badge payment ${escapeHtml(payment.status)} payment-toggle" type="button" data-action="toggle-tracker-payment" aria-pressed="${String(isPaid)}" aria-label="${action}" title="${action}">${escapeHtml(PAYMENT_STATES[payment.status])}</button>`;
 }
 
@@ -462,7 +504,7 @@ function projectBadge(status, source, quickToggle = false) {
 }
 
 function typeBadge(type) {
-  return `<span class="type-badge ${escapeHtml(type)}">${escapeHtml(SOURCE_TYPES[type])}</span>`;
+  return `<span class="type-badge ${escapeHtml(type)}">${escapeHtml(typeLabel(type))}</span>`;
 }
 
 function currencyBadge(currency) {
@@ -474,7 +516,7 @@ function sourceTitle(source) {
 }
 
 function sourcePeriodLabel(source, expected) {
-  if (source.type === 'saas') return `MRR ${formatCurrency(expected, source.currency)}`;
+  if (source.type === 'saas') return `${BILLING_CYCLES[source.billingCycle]} · ${source.billingMode === 'scheduled' ? 'Cobro del período' : 'Equivalente mensual'} ${formatCurrency(expected, source.currency)}`;
   if (source.type === 'project') return `Proyecto ${formatCurrency(source.amount, source.currency)}`;
   if (source.type === 'hours') return `${number.format(source.estimatedHours)} h × ${formatCurrency(source.amount, source.currency)}`;
   if (source.billingCycle === 'once') return `Extra ${formatCurrency(source.amount, source.currency)}`;
@@ -491,10 +533,12 @@ function renderSourceCard(source, compactCard = false, quickToggle = false) {
   const expected = sourceAmountForPeriod(source, state.period);
   const payment = getPaymentForPeriod(source, state.period);
   const collected = collectedAmount(expected, payment);
-  const visibleExpected = expected || source.amount;
+  const visibleExpected = expected;
   const convertedExpected = arsConversionLabel(expected, source.currency);
   const convertedCollected = arsConversionLabel(collected, source.currency);
-  const projectDate = source.expectedDate ? `<span class="meta-item">${formatDate(source.expectedDate)}</span>` : '';
+  const dueDate = source.type === 'saas' && source.billingMode === 'scheduled' ? recurringDates(source, state.period)[0] : source.expectedDate;
+  const projectDate = dueDate ? `<span class="meta-item">Vence ${formatDate(dueDate)}</span>` : '';
+  const linkedClient = state.workspace.clients.find(client => client.id === source.clientId);
   const clientMetric = source.type === 'saas' && source.clients > 0
     ? `<span class="meta-item">${number.format(source.clients)} ${source.clients === 1 ? 'cliente' : 'clientes'}</span>`
     : '';
@@ -510,9 +554,12 @@ function renderSourceCard(source, compactCard = false, quickToggle = false) {
           <h3>${escapeHtml(sourceTitle(source))}</h3>
           <p>${escapeHtml(sourcePeriodLabel(source, visibleExpected))}</p>
         </div>
-        <div class="card-amount-wrap"><strong class="card-amount ${amountClass(expected)}">${formatCurrency(expected, source.currency)}</strong>${source.currency === 'USD' ? `<span class="card-amount-secondary">${escapeHtml(convertedExpected)}</span>` : ''}</div>
+        <div class="card-amount-wrap"><strong class="card-amount ${amountClass(expected)}">${formatCurrency(expected, source.currency)}</strong>${convertedExpected ? `<span class="card-amount-secondary">${escapeHtml(convertedExpected)}</span>` : ''}</div>
       </div>
       <div class="card-meta">
+        ${linkedClient ? `<span class="meta-item">${escapeHtml(linkedClient.name)}</span>` : ''}
+        ${source.category ? `<span class="meta-item">${escapeHtml(source.category)}</span>` : ''}
+        ${source.cancelledFrom ? `<span class="meta-item">Cancelada desde ${escapeHtml(source.cancelledFrom)}</span>` : ''}
         ${clientMetric}
         ${projectDate}
         ${source.notes ? `<span class="meta-item note-preview">${escapeHtml(source.notes)}</span>` : ''}
@@ -539,6 +586,7 @@ function renderEmpty(title, description, action = 'Agregar fuente') {
 
 function sourcesFor(type, { relevantOnly = false } = {}) {
   return state.sources
+    .filter(source => !source.deletedAt)
     .filter(source => source.type === type)
     .filter(source => !(relevantOnly || source.type === 'saas') || sourceIsVisibleInPeriod(source, state.period))
     .filter(meetsFilter);
@@ -556,111 +604,49 @@ function renderTrackerWidget({ large = false } = {}) {
       <div class="section-kicker">Ingreso principal</div>
       <div class="tracker-title-row">
         <div>
-          <h3>Consultorio</h3>
-          <p>${formatMonth()} · ${tracker.days} ${tracker.days === 1 ? 'día de consultorio' : 'días de consultorio'}</p>
+          <h3>${escapeHtml(typeLabel('hours'))}</h3>
+          <p>${formatMonth()} · ${tracker.days} ${tracker.days === 1 ? 'día registrado' : 'días registrados'}</p>
         </div>
         ${trackerPaymentBadge(payment, tracker.total)}
       </div>
       <div class="tracker-numbers">
         <div><span>Horas reales</span><b>${number.format(tracker.real)} h</b></div>
         <div><span>Horas a pagar</span><b>${number.format(tracker.payable)} h</b></div>
-        <div><span>Total · ${currency}</span><span class="currency-value"><b>${formatCurrency(tracker.total, currency)}</b>${currency === 'USD' ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
+        <div><span>Total · ${currency}</span><span class="currency-value"><b>${formatCurrency(tracker.total, currency)}</b>${convertedTotal ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
       </div>
       <div class="tracker-footer">
         <div class="tracker-payment-copy">
           <span>${payment.status === 'partial' || payment.status === 'paid' ? `Cobrado ${formatCurrency(collected, currency)}${convertedCollected ? ` · ${convertedCollected}` : ''}` : 'Pendiente de cobro'}</span>
           <small>${escapeHtml(trackerPaymentTiming(payment))}</small>
         </div>
-        <button class="btn small" type="button" data-action="go-hours">Ver consultorio</button>
+        <button class="btn small" type="button" data-action="go-hours">Ver horas</button>
       </div>
     </article>`;
 }
 
-function renderCollectionCard(metrics) {
-  const percentage = metrics.total > 0 ? Math.round((metrics.collected / metrics.total) * 100) : 0;
-  return `
-    <article class="collection-card">
-      <div class="section-kicker">Cobros del período · ARS</div>
-      <div class="collection-amounts">
-        <div><span>Cobrado</span><strong>${money.format(metrics.collected)}</strong></div>
-        <div><span>Pendiente</span><strong>${money.format(metrics.pending)}</strong></div>
-      </div>
-      <div class="collection-bar" role="progressbar" aria-label="Cobrado del período" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percentage}"><span style="width:${percentage}%"></span></div>
-      <p>${percentage}% del ingreso estimado consolidado está cobrado.</p>
-      ${metrics.unconvertedUsd ? `<p class="conversion-warning">Hay ${metrics.unconvertedUsd} ${metrics.unconvertedUsd === 1 ? 'importe en USD sin cotización' : 'importes en USD sin cotización'}; no se incluye en este total.</p>` : ''}
-    </article>`;
-}
-
-function renderKpis(metrics) {
-  const rateNote = hasExchangeRate() ? 'USD convertido con BCRA' : 'Consolidado en ARS';
-  return `
-    <section class="kpi-grid" aria-label="Resumen financiero">
-      <article class="kpi-card accent animate-in" style="--delay:40ms"><span>MRR activo · ARS</span><strong>${money.format(metrics.mrr)}</strong><small>${rateNote}</small></article>
-      <article class="kpi-card animate-in" style="--delay:90ms"><span>Desarrollos puntuales · ARS</span><strong>${money.format(metrics.projects)}</strong><small>Proyectado en ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</small></article>
-      <article class="kpi-card total animate-in" style="--delay:140ms"><span>Ingreso estimado · ARS</span><strong>${money.format(metrics.total)}</strong><small>${formatMonth()} · ${rateNote}</small></article>
-      <article class="kpi-card animate-in" style="--delay:190ms"><span>Apps y proyectos activos</span><strong>${number.format(metrics.active)}</strong><small>Sin contar pausados</small></article>
-    </section>`;
-}
-
-function renderDashboard() {
-  const { metrics } = currentHub();
-  const saas = sourcesFor('saas');
-  const projects = sourcesFor('project', { relevantOnly: true });
-  const fixed = sourcesFor('fixed', { relevantOnly: true });
-  return `
-    <section class="dashboard-hero animate-in" style="--delay:0ms">
-      <div>
-        <p class="eyebrow">Hub financiero personal</p>
-        <h1>Tu panorama de ingresos, claro y en un solo lugar.</h1>
-        <p class="lede">Seguimiento de productos, proyectos, horas y cobros para ${formatMonth().toLowerCase()}.</p>
-      </div>
-      <div class="hero-actions">
-        <button type="button" class="btn hero-action" data-action="export-monthly-summary" title="Descargar el detalle de facturación del período elegido en PDF">Descargar PDF</button>
-        <button type="button" class="btn primary hero-action" data-action="new-source">+ Nueva fuente</button>
-      </div>
-    </section>
-    ${renderKpis(metrics)}
-    <section class="dashboard-split animate-in" style="--delay:230ms">
-      ${renderCollectionCard(metrics)}
-      ${renderTrackerWidget()}
-    </section>
-    <section class="module-section animate-in" style="--delay:280ms">
-      <div class="section-header"><div><p class="section-kicker">Recurrente</p><h2>Micro-SaaS & suscripciones</h2></div><button class="text-button" type="button" data-action="go-route" data-route="saas">Ver todo</button></div>
-      <div class="card-grid">${saas.length ? saas.slice(0, 3).map(source => renderSourceCard(source, true, true)).join('') : renderEmpty('Todavía no hay suscripciones', 'Agregá tu primer Micro-SaaS o mantenimiento activo.')}</div>
-    </section>
-    <section class="module-section two-columns animate-in" style="--delay:330ms">
-      <div>
-        <div class="section-header"><div><p class="section-kicker">Pago único</p><h2>Desarrollos puntuales</h2></div><button class="text-button" type="button" data-action="go-route" data-route="projects">Ver todo</button></div>
-        <div class="stack-list">${projects.length ? projects.slice(0, 3).map(source => renderSourceCard(source, true, true)).join('') : renderEmpty('Sin proyectos en este período', 'Usá una fecha estimada para proyectar un desarrollo.')}</div>
-      </div>
-      <div>
-        <div class="section-header"><div><p class="section-kicker">Complementos</p><h2>Fijos & extras</h2></div><button class="text-button" type="button" data-action="new-source">Agregar</button></div>
-        <div class="stack-list">${fixed.length ? fixed.slice(0, 3).map(source => renderSourceCard(source, true)).join('') : renderEmpty('Sin extras cargados', 'Registrá pagos fijos, ocasionales o adicionales.')}</div>
-      </div>
-    </section>`;
-}
 
 function renderCatalog(type) {
   const isSaas = type === 'saas';
-  const title = isSaas ? 'Micro-SaaS & suscripciones' : 'Desarrollos puntuales';
+  const title = typeLabel(type);
   const description = isSaas
     ? 'Suscripciones desde su mes de alta, con activación y cobros independientes para cada mes.'
     : 'Proyectos de pago único del mes elegido, con sus fechas de entrega y cobros esperados.';
   const sources = sourcesFor(type, { relevantOnly: !isSaas });
+  const ended = isSaas ? state.sources.filter(source => source.type === 'saas' && !source.deletedAt && source.startPeriod <= state.period && !sourceIsVisibleInPeriod(source, state.period)) : [];
   return `
     <section class="page-heading">
-      <div><p class="eyebrow">${isSaas ? 'Ingresos recurrentes' : 'Pago único'}</p><h1>${title}</h1><p class="lede">${description}</p></div>
-      <button type="button" class="btn primary" data-action="new-source" data-type="${type}">+ ${isSaas ? 'Nueva suscripción' : 'Nuevo desarrollo'}</button>
+      <div><p class="eyebrow">${isSaas ? 'Ingresos recurrentes' : 'Pago único'}</p><h1>${escapeHtml(title)}</h1><p class="lede">${description}</p></div>
+      <button type="button" class="btn primary" data-action="new-source" data-type="${type}">+ ${isSaas ? 'Ingreso recurrente' : 'Proyecto'}</button>
     </section>
     <section class="catalog-grid">
       ${sources.length ? sources.map(source => renderSourceCard(source, false, true)).join('') : renderEmpty(`No hay ${isSaas ? 'suscripciones' : 'desarrollos'} para mostrar`, 'Podés crear una fuente ahora y completar el cobro más tarde.')}
-    </section>`;
+    </section>${ended.length ? `<details class="settings-card"><summary>Finalizadas o canceladas (${ended.length})</summary><p class="note">No se incluyen en los totales del mes. Podés editar sus fechas para volver a usarlas.</p><div class="card-grid">${ended.map(source => renderSourceCard(source)).join('')}</div></details>` : ''}`;
 }
 
 function renderCalendar() {
   const { year, month } = currentParts();
   const days = currentDays();
-  const offset = mondayOffset(year, month);
+  const offset = (new Date(year, month - 1, 1).getDay() - state.workspace.profile.weekStart + 7) % 7;
   const dim = daysInMonth(year, month);
   const today = todayString();
   let output = '';
@@ -669,7 +655,7 @@ function renderCalendar() {
     const date = dateInCurrentPeriod(day);
     const hours = days[date] || 0;
     const holiday = state.settings.holidays.has(date);
-    const weekend = [0, 6].includes(dayOfWeek(date));
+    const weekend = !state.settings.hours[dayOfWeek(date)];
     const classes = ['day'];
     if (weekend) classes.push('weekend');
     if (holiday) classes.push('holiday');
@@ -694,15 +680,15 @@ function renderHours() {
     : `Este mes empieza en 0. Al cargar una tarifa quedará guardada solo para ${formatMonth().toLowerCase()}.`;
   return `
     <section class="page-heading">
-      <div><p class="eyebrow">Ingreso principal</p><h1>Consultorio · registro de horas</h1><p class="lede">Registrá tus jornadas y llevá el control del cobro mensual sin salir del Hub.</p></div>
+      <div><p class="eyebrow">Trabajo por horas</p><h1>${escapeHtml(typeLabel('hours'))}</h1><p class="lede">Registrá tus jornadas y llevá el control del cobro mensual. Para tarifas por cliente, agregá un servicio por horas.</p></div>
       <button type="button" class="btn" data-action="new-source" data-type="hours">+ Servicio por horas</button>
     </section>
     <section class="hours-summary-layout">
       ${renderTrackerWidget({ large: true })}
       <form class="payment-panel" id="trackerPaymentForm">
         <p class="section-kicker">Cierre mensual</p>
-        <h2>Consultorio · ${monthOnly.format(new Date(currentParts().year, currentParts().month - 1, 1))}</h2>
-        <div class="payment-quick-actions" role="group" aria-label="Marcar cobro del consultorio">
+        <h2>${escapeHtml(typeLabel('hours'))} · ${formatMonth()}</h2>
+        <div class="payment-quick-actions" role="group" aria-label="Marcar cobro de las horas">
           <button class="payment-state-action ${payment.status === 'pending' ? 'is-active pending' : ''}" type="button" data-action="set-tracker-payment-status" data-status="pending" aria-pressed="${String(payment.status === 'pending')}" ${tracker.total > 0 ? '' : 'disabled'}>Pendiente</button>
           <button class="payment-state-action ${payment.status === 'paid' ? 'is-active paid' : ''}" type="button" data-action="set-tracker-payment-status" data-status="paid" aria-pressed="${String(payment.status === 'paid')}" ${tracker.total > 0 ? '' : 'disabled'}>Cobrado total</button>
         </div>
@@ -715,25 +701,25 @@ function renderHours() {
         <label>Monto cobrado (${currency})
           <input name="paidAmount" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(payment.paidAmount))}" placeholder="0">
         </label>
-        <p class="note">Total del consultorio: <strong>${formatCurrency(tracker.total, currency)}</strong>${currency === 'USD' ? ` <span class="conversion-note">${escapeHtml(convertedTotal)}</span>` : ''}<br><small>Usá el estado detallado solo si necesitás registrar un cobro parcial.</small></p>
+        <p class="note">Total registrado: <strong>${formatCurrency(tracker.total, currency)}</strong><br><small>Usá el estado detallado solo si necesitás registrar un cobro parcial.</small></p>
         <button class="btn primary" type="submit">Guardar detalle</button>
       </form>
     </section>
     <section class="calendar-panel">
       <div class="calendar-toolbar">
-        <div><p class="section-kicker">${formatMonth()}</p><h2>Jornadas de consultorio</h2></div>
-        <label class="rate-field">Valor hora <span class="rate-inputs"><input id="rateInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(rate.rate))}" placeholder="0"><select id="rateCurrency" aria-label="Moneda de la tarifa por hora"><option value="ARS" ${currency === 'ARS' ? 'selected' : ''}>ARS</option><option value="USD" ${currency === 'USD' ? 'selected' : ''}>USD</option></select></span></label>
+        <div><p class="section-kicker">${formatMonth()}</p><h2>Jornadas registradas</h2></div>
+        <label class="rate-field">Valor hora <span class="rate-inputs"><input id="rateInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(rate.rate))}" placeholder="0"><select id="rateCurrency" aria-label="Moneda de la tarifa por hora">${currencyOptions(currency)}</select></span></label>
       </div>
       <p class="rate-period-note">${escapeHtml(rateScopeNote)}</p>
       <div class="mode-tabs" role="group" aria-label="Modo del calendario">
-        <button type="button" data-action="mode" data-mode="work" aria-pressed="${state.mode === 'work'}">Fui al consultorio</button>
+        <button type="button" data-action="mode" data-mode="work" aria-pressed="${state.mode === 'work'}">Registrar jornada</button>
         <button type="button" data-action="mode" data-mode="holiday" aria-pressed="${state.mode === 'holiday'}">Feriado</button>
         <button type="button" data-action="mode" data-mode="edit" aria-pressed="${state.mode === 'edit'}">Editar horas</button>
       </div>
       <p class="hint">${state.mode === 'work' ? 'Tocá un día para registrar tu jornada; si no tiene horas por defecto, podés elegirlas.' : state.mode === 'holiday' ? 'Marcá los feriados que deban contar con multiplicador.' : 'Elegí un día para editar sus horas o su feriado.'}</p>
-      <div class="weekdays" aria-hidden="true"><span>Lu</span><span>Ma</span><span>Mi</span><span>Ju</span><span>Vi</span><span>Sá</span><span>Do</span></div>
+      <div class="weekdays" aria-hidden="true">${Array.from({ length: 7 }, (_, index) => `<span>${['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá'][(index + state.workspace.profile.weekStart) % 7]}</span>`).join('')}</div>
       <div class="calendar-grid">${renderCalendar()}</div>
-      <div class="calendar-total"><span>${tracker.days} días · ${number.format(tracker.real)} h reales · ${number.format(tracker.payable)} h a pagar</span><span class="currency-value"><strong>${formatCurrency(tracker.total, currency)}</strong>${currency === 'USD' ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
+      <div class="calendar-total"><span>${tracker.days} días · ${number.format(tracker.real)} h reales · ${number.format(tracker.payable)} h a pagar</span><span class="currency-value"><strong>${formatCurrency(tracker.total, currency)}</strong>${convertedTotal ? `<small>${escapeHtml(convertedTotal)}</small>` : ''}</span></div>
     </section>
     <section class="module-section">
       <div class="section-header"><div><p class="section-kicker">Freelance</p><h2>Servicios por hora planificados</h2></div><button type="button" class="text-button" data-action="new-source" data-type="hours">Agregar servicio</button></div>
@@ -746,10 +732,11 @@ function renderSettings() {
   const names = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
   return `
     <section class="page-heading compact-heading">
-      <div><p class="eyebrow">Configuración</p><h1>Ajustes & copias</h1><p class="lede">Personalizá las horas, revisá la cotización USD y guardá una copia de tus registros.</p></div>
+      <div><p class="eyebrow">Configuración</p><h1>Ajustes & copias</h1><p class="lede">Adaptá las secciones, el calendario y las monedas a tu actividad. Tus copias y recuperaciones también están acá.</p></div>
     </section>
     <section class="settings-layout">
       ${renderDesktopUpdateCard()}
+      ${workspaceUI.settingsExtra()}
       <form class="settings-card" id="hoursDefaultsForm">
         <p class="section-kicker">Tracker de horas</p>
         <h2>Horas que se cargan al tocar un día</h2>
@@ -760,6 +747,8 @@ function renderSettings() {
           <input id="multiplierInput" type="text" inputmode="decimal" value="${escapeHtml(formatInputNumber(state.settings.mult))}">
         </label>
         <p class="note">Los cambios aplican a futuras cargas. Para editar una fecha ya marcada, abrila desde el tracker.</p>
+        <p class="note">Poné 0 en los días no laborables. No se precargan feriados en espacios nuevos.</p>
+        <button class="btn primary" type="submit">Guardar jornada habitual</button>
       </form>
       <section class="settings-card">
         <p class="section-kicker">Copia de seguridad</p>
@@ -770,7 +759,7 @@ function renderSettings() {
       <section class="settings-card">
         <p class="section-kicker">Conversión automática</p>
         <h2>${hasExchangeRate() ? `1 USD = ${money.format(state.exchangeRate.rate)}` : 'Sin cotización USD'}</h2>
-        <p class="note">Fuente: BCRA · ${exchangeRateMeta()}. Los montos en USD se conservan en su moneda y el Hub los consolida en ARS.</p>
+        <p class="note">Fuente: BCRA · ${exchangeRateMeta()}. Referencia automática entre ARS y USD. Para otras monedas usá las conversiones manuales; los importes originales se conservan.</p>
         <div class="button-row"><button class="btn" type="button" data-action="refresh-exchange-rate" ${state.exchangeLoading ? 'disabled' : ''}>${state.exchangeLoading ? 'Actualizando…' : 'Actualizar cotización'}</button></div>
         <p class="note">${state.sources.length} fuentes de ingreso guardadas en este dispositivo.</p>
       </section>
@@ -778,7 +767,7 @@ function renderSettings() {
         <div>
           <p class="section-kicker">Zona de riesgo</p>
           <h2>Eliminar toda la información</h2>
-          <p class="note">Borra las horas, fuentes de ingreso, cobros, cotización y preferencias guardadas en este dispositivo. Esta acción no se puede deshacer.</p>
+          <p class="note">Vacía el espacio actual y conserva una copia local para recuperar los datos desde Configuración.</p>
         </div>
         <button class="btn danger" type="button" data-action="clear-all-data">Eliminar datos</button>
       </section>
@@ -786,6 +775,7 @@ function renderSettings() {
 }
 
 function render() {
+  applyWorkspacePreferences();
   ensureMonth();
   document.body.dataset.route = state.route;
   elements.periodInput.value = state.period;
@@ -793,6 +783,7 @@ function render() {
   elements.status.textContent = state.status;
   renderExchangeRateControl();
   elements.activeSectionLabel.textContent = ROUTES[state.route];
+  elements.filter.hidden = !['hub', 'saas', 'projects', 'hours'].includes(state.route);
   elements.nav.querySelectorAll('button[data-route]').forEach(button => {
     button.setAttribute('aria-current', button.dataset.route === state.route ? 'page' : 'false');
   });
@@ -800,10 +791,12 @@ function render() {
     button.setAttribute('aria-pressed', String(button.dataset.filter === state.filter));
   });
   let content;
-  if (state.route === 'hub') content = renderDashboard();
+  if (state.route === 'hub') content = workspaceUI.dashboard();
   else if (state.route === 'saas') content = renderCatalog('saas');
   else if (state.route === 'projects') content = renderCatalog('project');
   else if (state.route === 'hours') content = renderHours();
+  else if (state.route === 'clients') content = workspaceUI.directory();
+  else if (state.route === 'expenses') content = workspaceUI.expenses();
   else content = renderSettings();
   elements.view.innerHTML = `<div class="page page-${escapeHtml(state.route)}">${content}</div>`;
 }
@@ -856,41 +849,67 @@ function updateSourceFormUI() {
   const isSaas = type === 'saas';
   const isProject = type === 'project';
   const isHours = type === 'hours';
-  const amountLabel = isSaas ? 'MRR / monto por ciclo' : isProject ? 'Precio total acordado' : isHours ? 'Tarifa por hora' : 'Monto por ciclo o extra';
+  const amountLabel = isSaas ? 'Monto por ciclo' : isProject ? 'Precio total acordado' : isHours ? 'Tarifa por hora' : 'Monto por ciclo o extra';
   $('#sourceAmountLabel').textContent = `${amountLabel} (${currency})`;
   $('#sourcePaidAmountLabel').textContent = `Monto ya cobrado (${currency})`;
   $('#sourceCycleWrap').hidden = isProject || isHours;
-  $('#sourceClientsWrap').hidden = !isSaas;
+  $('#sourceClientsWrap').hidden = true;
+  $('#sourceRecurrenceWrap').hidden = !isSaas;
   $('#sourceHoursWrap').hidden = !isHours;
-  $('#sourceDateLabel').textContent = isProject ? 'Fecha del desarrollo / cobro' : 'Fecha estimada de cobro';
+  $('#sourceDateLabel').textContent = isProject ? 'Fecha del trabajo / cobro' : 'Fecha estimada de cobro';
+  fields.expectedDate.closest('label').hidden = isSaas;
+  fields.paidAmount.closest('label').hidden = fields.paymentStatus.value !== 'partial';
+  fields.clientId.closest('label').hidden = !state.workspace.profile.modules.clients && !fields.clientId.value;
+  fields.serviceId.closest('label').hidden = !state.workspace.profile.modules.clients && !fields.serviceId.value;
   const isNewSource = !state.sources.some(source => source.id === fields.id.value);
-  $('#sourceStatusLabel').textContent = isSaas ? 'Estado en este mes' : 'Estado del proyecto';
+  $('#sourceStatusLabel').textContent = isSaas ? 'Estado en este mes' : 'Estado del trabajo';
   const periodHint = $('#sourcePeriodHint');
   periodHint.hidden = !isSaas;
-  periodHint.textContent = `${formatMonth()}: el estado y el cobro se guardan solo para este mes. Los demás datos son compartidos. ${isNewSource ? 'La suscripción aparecerá desde este mes; los siguientes empezarán activos y pendientes de cobro.' : ''}`;
+  periodHint.textContent = `${formatMonth()}: activar, pausar o marcar un cobro afecta solo este mes. Nombre, tarifa y fechas definen todo el servicio. ${isNewSource ? 'La suscripción aparecerá desde su mes de inicio.' : ''}`;
   if (isProject && isNewSource && !fields.expectedDate.value) {
     fields.expectedDate.value = state.period === todayKey() ? todayString() : `${state.period}-01`;
   }
   const currencyHint = $('#sourceCurrencyHint');
-  currencyHint.hidden = currency !== 'USD';
-  if (currency === 'USD') {
-    currencyHint.textContent = hasExchangeRate()
-      ? `Se mostrará en ARS con la referencia BCRA: 1 USD = ${money.format(state.exchangeRate.rate)} (${state.exchangeRate.quoteDate ? `publicada ${formatDate(state.exchangeRate.quoteDate)}` : 'última disponible'}).`
-      : 'El importe queda guardado en USD. La conversión a ARS aparecerá al obtener una cotización oficial del BCRA.';
+  currencyHint.hidden = currency === state.workspace.profile.currency;
+  if (!currencyHint.hidden) {
+    const converted = convertAmount(1, currency, state.workspace.profile, state.exchangeRate);
+    currencyHint.textContent = converted === null ? `Guardado en ${currency}. Configurá su conversión en Ajustes para incluirlo en el total en ${state.workspace.profile.currency}.`
+      : `Conversión del panel: 1 ${currency} = ${formatCurrency(converted, state.workspace.profile.currency)}. El importe original se conserva.`;
   }
   if (isProject) fields.billingCycle.value = 'once';
-  else if (isHours || fields.billingCycle.value === 'once') fields.billingCycle.value = 'monthly';
+  else if (isHours) fields.billingCycle.value = 'monthly';
 }
 
-function openSourceModal(id = '', type = '') {
+function populateSourceRelations(clientId = '', serviceId = '') {
+  const fields = sourceFormFields();
+  fields.clientId.innerHTML = '<option value="">Sin cliente</option>' + state.workspace.clients.filter(item => !item.deletedAt || item.id === clientId).map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  fields.clientId.value = clientId;
+  fields.serviceId.innerHTML = '<option value="">Carga manual</option>' + state.workspace.services.filter(item => (!item.deletedAt || item.id === serviceId) && (!item.clientId || !clientId || item.clientId === clientId)).map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${formatCurrency(item.rate, item.currency)}</option>`).join('');
+  fields.serviceId.value = serviceId;
+}
+
+function applySourceService(service) {
+  if (!service) return;
+  const fields = sourceFormFields();
+  populateSourceRelations(service.clientId || fields.clientId.value, service.id);
+  fields.amount.value = formatInputNumber(service.rate); fields.currency.value = service.currency;
+  fields.type.value = service.unit === 'hour' ? 'hours' : 'project';
+  if (!fields.name.value.trim()) fields.name.value = service.name;
+  updateSourceFormUI();
+}
+
+function openSourceModal(id = '', type = '', presets = {}) {
   const source = state.sources.find(item => item.id === id);
   const fields = sourceFormFields();
-  const initialType = type || 'saas';
+  const initialType = type || (state.workspace.profile.modules.saas ? 'saas' : state.workspace.profile.modules.projects ? 'project' : state.workspace.profile.modules.hours ? 'hours' : 'fixed');
   const projectDateForPeriod = state.period === todayKey() ? todayString() : `${state.period}-01`;
   const initial = source || normalizeSource({
     type: initialType,
     id: createId(),
     startPeriod: state.period,
+    startsOn: initialType === 'saas' ? `${state.period}-01` : '',
+    billingMode: 'scheduled',
+    currency: state.workspace.profile.currency,
     expectedDate: initialType === 'project' ? projectDateForPeriod : '',
     projectStatus: (initialType === 'saas' || initialType === 'fixed') ? 'active' : 'development'
   });
@@ -899,7 +918,7 @@ function openSourceModal(id = '', type = '') {
   fields.name.value = initial.name;
   fields.type.value = initial.type;
   fields.amount.value = formatInputNumber(initial.amount);
-  fields.currency.value = initial.currency;
+  fields.currency.innerHTML = currencyOptions(initial.currency);
   fields.billingCycle.value = initial.billingCycle;
   fields.clients.value = initial.clients || '';
   fields.estimatedHours.value = initial.estimatedHours || '';
@@ -907,6 +926,14 @@ function openSourceModal(id = '', type = '') {
   fields.expectedDate.value = initial.expectedDate;
   fields.url.value = initial.url;
   fields.notes.value = initial.notes;
+  fields.category.value = initial.category;
+  fields.startsOn.value = initial.startsOn || (initial.type === 'saas' ? `${initial.startPeriod}-01` : `${state.period}-01`);
+  fields.endsOn.value = initial.endsOn;
+  fields.cancelledFrom.value = initial.cancelledFrom;
+  fields.dueDay.value = initial.dueDay;
+  fields.billingMode.value = initial.billingMode;
+  populateSourceRelations(presets.clientId || initial.clientId, initial.serviceId);
+  if (presets.service) applySourceService(presets.service);
   fields.paymentStatus.value = payment.status;
   fields.paidAmount.value = payment.paidAmount ? formatInputNumber(payment.paidAmount) : '';
   $('#sourceDialogTitle').textContent = source ? 'Editar fuente' : 'Nueva fuente de ingreso';
@@ -919,9 +946,11 @@ function openSourceModal(id = '', type = '') {
 
 function removeSource(id) {
   const source = state.sources.find(item => item.id === id);
-  if (!source || !window.confirm(`¿Eliminar “${sourceTitle(source)}”? Esta acción no borra las horas registradas.`)) return;
-  state.sources = state.sources.filter(item => item.id !== id);
-  saveCurrentSources();
+  if (!source) return;
+  const sources = state.sources.map(item => item.id === id ? { ...item, deletedAt: new Date().toISOString() } : item);
+  if (!saveSources(sources)) return setStatus('No se pudo guardar.', 'error');
+  state.sources = sources;
+  setStatus('Ingreso movido a papelera. Podés recuperarlo en Configuración.', 'saved');
   closeDialog(elements.sourceDialog);
   render();
 }
@@ -971,13 +1000,28 @@ function onSourceSubmit(event) {
   if (!Number.isFinite(paidAmount) || paidAmount < 0) return showSourceError('El monto cobrado debe ser válido.');
   if (!Number.isFinite(estimatedHours) || estimatedHours < 0 || estimatedHours > 744) return showSourceError('Las horas estimadas deben estar entre 0 y 744.');
   if (!Number.isFinite(clients) || clients < 0) return showSourceError('La cantidad de clientes debe ser válida.');
+  if (fields.type.value === 'saas') {
+    if (!isValidDate(fields.startsOn.value)) return showSourceError('Elegí una fecha de inicio válida.');
+    if (fields.endsOn.value && (!isValidDate(fields.endsOn.value) || fields.endsOn.value < fields.startsOn.value)) return showSourceError('La fecha final debe ser igual o posterior al inicio.');
+    if (!Number.isInteger(Number(fields.dueDay.value)) || !(Number(fields.dueDay.value) >= 1 && Number(fields.dueDay.value) <= 31)) return showSourceError('El día de vencimiento debe ser un entero entre 1 y 31.');
+    if (fields.cancelledFrom.value && fields.cancelledFrom.value < fields.startsOn.value.slice(0, 7)) return showSourceError('La cancelación no puede ser anterior al inicio.');
+  }
   const previous = state.sources.find(item => item.id === fields.id.value);
   let source = normalizeSource({
     ...(previous || {}),
     id: fields.id.value || createId(),
     name: fields.name.value,
     type: fields.type.value,
-    startPeriod: previous?.type === 'saas' ? previous.startPeriod : state.period,
+    startPeriod: fields.type.value === 'saas' ? fields.startsOn.value.slice(0, 7) : state.period,
+    startsOn: fields.type.value === 'saas' ? fields.startsOn.value : '',
+    endsOn: fields.type.value === 'saas' ? fields.endsOn.value : '',
+    cancelledFrom: fields.type.value === 'saas' ? fields.cancelledFrom.value : '',
+    dueDay: Number(fields.dueDay.value),
+    billingMode: fields.billingMode.value,
+    clientId: fields.clientId.value,
+    serviceId: fields.serviceId.value,
+    category: fields.category.value,
+    period: fields.type.value === 'hours' ? (previous?.period || state.period) : '',
     amount,
     currency: fields.currency.value,
     billingCycle: fields.type.value === 'project' ? 'once' : fields.type.value === 'hours' ? 'monthly' : fields.billingCycle.value,
@@ -991,9 +1035,10 @@ function onSourceSubmit(event) {
   });
   source = setStatusForPeriod(source, state.period, fields.projectStatus.value);
   source = setPaymentForPeriod(source, state.period, { status: fields.paymentStatus.value, paidAmount });
-  if (previous) state.sources = state.sources.map(item => item.id === source.id ? source : item);
-  else state.sources = [...state.sources, source];
-  saveCurrentSources();
+  const sources = previous ? state.sources.map(item => item.id === source.id ? source : item) : [...state.sources, source];
+  if (!saveSources(sources)) return showSourceError('No se pudo guardar. Tus cambios siguen en este formulario.');
+  state.sources = sources;
+  setStatus('Ingreso guardado', 'saved');
   closeDialog(elements.sourceDialog);
   render();
 }
@@ -1035,6 +1080,7 @@ function onDay(date) {
   }
   if (state.mode === 'edit') return openHourModal(date);
   if (days[date] > 0) {
+    if (!createSafetyBackup('Antes de quitar una jornada', true)) return setStatus('No se pudo crear una copia; la jornada se conservó.', 'error');
     delete days[date];
     saveCurrentMonth();
     render();
@@ -1099,7 +1145,7 @@ function setTrackerPaymentStatus(status) {
     }
   };
   const saved = saveTrackerPayments(state.trackerPayments);
-  const message = status === 'paid' ? 'Consultorio marcado como cobrado total' : 'Consultorio marcado como pendiente';
+  const message = status === 'paid' ? 'Horas marcadas como cobradas' : 'Horas marcadas como pendientes';
   setStatus(saved ? message : 'No se pudo guardar el cambio', saved ? 'saved' : 'error');
   render();
 }
@@ -1166,8 +1212,9 @@ function downloadBackup() {
 }
 
 function clearSavedData() {
-  const confirmed = window.confirm('¿Eliminar toda la información de Libreta de Horas? Se borrarán horas, ingresos, cobros, cotización y preferencias guardadas en este dispositivo. Esta acción no se puede deshacer.');
+  const confirmed = window.confirm('¿Vaciar este espacio? Se quitarán horas, ingresos, clientes, gastos y preferencias. Se conservará una copia local para recuperar los datos desde Configuración.');
   if (!confirmed) return;
+  if (!createSafetyBackup('Antes de vaciar el espacio', true)) return setStatus('No se pudo crear la copia de seguridad. No se borró nada.', 'error');
   if (!clearAllData()) {
     setStatus('No se pudieron eliminar todos los datos', 'error');
     return;
@@ -1175,6 +1222,7 @@ function clearSavedData() {
   state.period = todayKey();
   state.filter = 'all';
   state.settings = loadSettings();
+  state.workspace = loadWorkspace();
   state.months = new Map();
   state.sources = [];
   state.trackerPayments = {};
@@ -1203,7 +1251,7 @@ function buildMonthlySummaryReport() {
       const { source, payment } = line;
       return {
         name: sourceTitle(source),
-        type: SOURCE_TYPES[source.type],
+        type: typeLabel(source.type),
         projectStatus: PROJECT_STATES[getStatusForPeriod(source, state.period)],
         paymentStatus: PAYMENT_STATES[payment.status],
         currency: source.currency,
@@ -1214,7 +1262,7 @@ function buildMonthlySummaryReport() {
       };
     });
   rows.push({
-    name: 'Consultorio',
+    name: typeLabel('hours'),
     type: SOURCE_TYPES.hours,
     projectStatus: '-',
     paymentStatus: PAYMENT_STATES[trackerPayment.status],
@@ -1233,14 +1281,14 @@ function buildMonthlySummaryReport() {
     generatedAt: `Generado ${refreshedAt.format(new Date())}`,
     exchangeRate,
     note: metrics.unconvertedUsd
-      ? `Atención: hay ${metrics.unconvertedUsd} ${metrics.unconvertedUsd === 1 ? 'importe' : 'importes'} en USD sin cotización BCRA; no se incluyen en el consolidado ARS.`
-      : `Dólar oficial BCRA: ${exchangeRate}. Montos consolidados en ARS.`,
+      ? `Total parcial: ${metrics.unconvertedUsd} importes sin conversión. Moneda principal: ${state.workspace.profile.currency}.`
+      : `Moneda principal: ${state.workspace.profile.currency}. Gastos pagados: ${formatCurrency(expenseSummary(state.workspace, state.period, state.exchangeRate).paid, state.workspace.profile.currency)}.`,
     totals: {
-      mrr: money.format(metrics.mrr),
-      projects: money.format(metrics.projects),
-      total: money.format(metrics.total),
-      collected: money.format(metrics.collected),
-      pending: money.format(metrics.pending)
+      mrr: formatCurrency(metrics.mrr, state.workspace.profile.currency),
+      projects: formatCurrency(metrics.projects, state.workspace.profile.currency),
+      total: formatCurrency(metrics.total, state.workspace.profile.currency),
+      collected: formatCurrency(metrics.collected, state.workspace.profile.currency),
+      pending: formatCurrency(metrics.pending, state.workspace.profile.currency)
     },
     rows
   };
@@ -1278,22 +1326,25 @@ async function readImport(file) {
 
 function applyImport() {
   if (!state.pendingImport) return;
+  if (!createSafetyBackup('Antes de importar', true)) return setStatus('No se pudo respaldar el espacio actual; importación cancelada.', 'error');
   const backup = state.pendingImport;
-  for (const [key, month] of Object.entries(backup.months)) {
-    state.months.set(key, month);
-    saveMonth(key, month);
-  }
-  state.settings = applyImportedSettings(state.settings, backup.settings);
+  const settings = applyImportedSettings(state.settings, backup.settings);
+  const workspace = backup.workspace ? normalizeWorkspace(backup.workspace) : state.workspace;
+  const saved = storageTransaction(() => {
+    for (const [key, month] of Object.entries(backup.months)) if (!saveMonth(key, month)) return false;
+    return saveSettings(settings) && saveSources(backup.sources) && saveTrackerPayments(backup.trackerPayments)
+      && (!backup.workspace || saveWorkspace(workspace)) && (!backup.exchangeRate || saveExchangeRate(backup.exchangeRate));
+  });
+  if (!saved) return setStatus('No se pudo importar. Se conservaron los datos anteriores; descargá una copia o liberá espacio.', 'error');
+  for (const [key, month] of Object.entries(backup.months)) state.months.set(key, month);
+  state.settings = settings;
   state.sources = backup.sources;
   state.trackerPayments = backup.trackerPayments;
+  state.workspace = workspace;
   if (backup.exchangeRate) state.exchangeRate = backup.exchangeRate;
-  const settingsSaved = saveSettings(state.settings);
-  const sourcesSaved = saveSources(state.sources);
-  const paymentsSaved = saveTrackerPayments(state.trackerPayments);
-  const exchangeRateSaved = !backup.exchangeRate || saveExchangeRate(state.exchangeRate);
   state.pendingImport = null;
   closeDialog(elements.importDialog);
-  persist(settingsSaved && sourcesSaved && paymentsSaved && exchangeRateSaved);
+  persist(true);
   render();
 }
 
@@ -1374,6 +1425,9 @@ elements.view.addEventListener('focusout', event => {
 elements.sourceForm.addEventListener('submit', onSourceSubmit);
 elements.sourceForm.elements.type.addEventListener('change', updateSourceFormUI);
 elements.sourceForm.elements.currency.addEventListener('change', updateSourceFormUI);
+elements.sourceForm.elements.paymentStatus.addEventListener('change', updateSourceFormUI);
+elements.sourceForm.elements.clientId.addEventListener('change', event => populateSourceRelations(event.target.value));
+elements.sourceForm.elements.serviceId.addEventListener('change', event => applySourceService(state.workspace.services.find(item => item.id === event.target.value)));
 elements.deleteSource.addEventListener('click', () => removeSource(elements.sourceForm.elements.id.value));
 elements.closeSource.addEventListener('click', () => closeDialog(elements.sourceDialog));
 $('#cancelSource').addEventListener('click', () => closeDialog(elements.sourceDialog));
@@ -1386,6 +1440,7 @@ $('#closeHour').addEventListener('click', closeHourModal);
 $('#removeHour').addEventListener('click', () => {
   const date = $('#hourDate').value;
   if (isValidDate(date)) {
+    if (!createSafetyBackup('Antes de quitar una jornada', true)) return setStatus('No se pudo crear una copia; la jornada se conservó.', 'error');
     delete currentDays()[date];
     saveCurrentMonth();
     closeHourModal();
@@ -1423,6 +1478,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 
 // Se carga el mes actual sin modificar los registros anteriores guardados por la versión original.
 ensureMonth();
+workspaceUI.init();
 render();
 initDesktopUpdates(() => setRoute('settings'));
 applySidebarState();

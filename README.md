@@ -1,20 +1,24 @@
 # Hub de Ingresos
 
-Panel personal y local para visualizar ingresos recurrentes, desarrollos puntuales, servicios por hora, pagos fijos y el estado de cobro de cada uno.
+Espacio de trabajo local y configurable para independientes, docentes, profesionales y pequeños negocios: ingresos recurrentes, proyectos, servicios por hora, clientes y gastos.
 
 La app funciona como PWA: se puede instalar en el celular y queda disponible sin conexión después de la primera carga.
 
 ## Qué incluye
 
-- **Hub principal:** MRR, desarrollos del mes, total estimado, cobrado vs. pendiente y proyectos activos.
+- **Bienvenida y personalización:** elegí tu actividad, secciones, nombres, moneda, formato regional y tarjetas del panel. Ocultar una sección no borra sus registros ni los excluye de los totales.
+- **Hub principal:** ingresos previstos, cobrado, pendiente, horas, gastos pagados y balance de caja (cobrado menos gastos pagados).
 - **Sidebar adaptable:** menú emergente con sección activa, opción de fijarlo en escritorio y modo compacto de íconos.
-- **Micro-SaaS y suscripciones:** aparecen desde el mes seleccionado al crearlas. Activar, pausar o registrar un cobro afecta solo a ese mes; los siguientes empiezan activos y pendientes. Nombre, monto y demás datos generales siguen compartidos entre meses.
-- **Desarrollos puntuales:** presupuesto, fecha estimada, estado del proyecto y cobro parcial o total.
+- **Ingresos recurrentes:** fecha de inicio y fin opcional, vencimiento y ciclos semanales, mensuales, trimestrales o anuales. Los nuevos se calculan según fechas reales; los existentes conservan el equivalente mensual anterior. Pausar o cobrar afecta solo al mes seleccionado; cancelar desde un mes excluye ese mes y todos los siguientes. Nombre, monto y calendario siguen compartidos entre meses.
+- **Proyectos y pagos únicos:** presupuesto, fecha estimada, categoría, estado y cobro parcial o total.
+- **Clientes y servicios:** contactos opcionales y tarifas generales o por cliente. Usar una tarifa copia su valor al trabajo; editarla no modifica trabajos existentes. Los servicios por horas nuevos pertenecen solo al mes donde se registran.
+- **Gastos opcionales:** categoría, moneda, fecha y estado pagado/pendiente, con balance mensual.
 - **Tracker de horas integrado:** conserva el calendario de horas y suma automáticamente su total al Hub.
 - **Ingresos fijos o extras:** cargos recurrentes o pagos únicos.
-- **Montos en ARS o USD:** cada fuente y la tarifa del tracker puede cargarse en su moneda original; el Hub consolida en pesos argentinos con la última cotización USD publicada por el BCRA.
+- **Monedas:** ARS, USD, EUR, MXN, CLP, COP, UYU, BRL, PEN y GBP. Elegí la moneda principal y tasas manuales (valor de 1 unidad extranjera en la moneda principal). ARS/USD puede usar la referencia BCRA. Los importes sin tasa quedan fuera del total con una advertencia; cambiar la moneda principal vacía las tasas anteriores.
 - **Histórico mensual:** elegí el período con las flechas o el selector de mes.
-- **Backup:** descarga e importa los datos completos del Hub y del tracker.
+- **Seguridad local:** exportación completa, importación compatible con copias anteriores, papelera recuperable y hasta 7 copias automáticas/manuales. Se respalda antes del primer cambio diario, de importar, restaurar o borrar datos; estas copias no protegen ante pérdida del equipo.
+- **Ejemplos opcionales:** disponibles solo en un espacio vacío; se pueden quitar sin borrar registros propios.
 
 ## Tus datos
 
@@ -22,7 +26,7 @@ Tus datos financieros se guardan localmente en el dispositivo y no se envían a 
 
 Para convertir USD, la app consulta la API pública de Estadísticas Cambiarias del BCRA y conserva la última cotización disponible para seguir mostrando conversiones sin conexión. La interfaz siempre muestra la fecha de publicación y actualización de la referencia usada.
 
-Hacé una copia de seguridad antes de borrar los datos del navegador o cambiar de teléfono. Los backups nuevos incluyen fuentes de ingreso y estados de cobro, y la importación sigue aceptando backups anteriores del contador de horas.
+Hacé una copia de seguridad antes de borrar los datos del navegador o cambiar de teléfono. Los backups nuevos incluyen perfil, clientes, servicios, gastos, papelera, ingresos, cobros y horas. La importación sigue aceptando backups anteriores del contador de horas y conserva la personalización si la copia antigua no la contiene. No hay cuentas de usuario ni sincronización en la nube.
 
 Las suscripciones anteriores toman como inicio el mes de creación o el primer mes con registros, si es anterior. Sus pagos mensuales se conservan; los estados globales antiguos de actividad y cobro se asignan al mes de inicio, ya que no tienen un mes de origen registrado.
 
@@ -31,6 +35,7 @@ Las suscripciones anteriores toman como inicio el mes de creación o el primer m
 - `index.html`: interfaz, estilos y estructura accesible.
 - `app.js`: navegación, estado del drawer, componentes visuales, formularios y eventos.
 - `data.js`: modelo financiero, cálculos, validación, almacenamiento local y preferencias visuales.
+- `workspace.js`, `workspace-ui.js`, `workspace.css`: perfil configurable, clientes, servicios, gastos y experiencia de bienvenida/recuperación.
 - `sw.js`: caché para instalación y funcionamiento sin conexión.
 - `manifest.webmanifest` e íconos: datos de la PWA instalada.
 
@@ -98,7 +103,7 @@ La Pre-release contiene el instalador de prueba, su `.blockmap` y `prueba.yml`. 
 
 Los workflows usan el token de GitHub Actions; no incluyas tokens en los archivos de la app. No sobrescribas versiones ya publicadas.
 
-Pruebas: `npm test`, `npm run test:updates-ui` y `npm run test:ui`. La prueba de interfaz del actualizador usa una sesión temporal y simula la descarga/instalación: no reemplaza la aplicación instalada.
+Pruebas: `npm test`, `npm run test:updates-ui`, `npm run test:ui` y `npm run test:workspace-ui`. Usan datos temporales. La prueba de interfaz del actualizador simula la descarga/instalación: no reemplaza la aplicación instalada. La prueba de espacio de trabajo recorre bienvenida, tarifas, gastos, recuperación, copias y ejemplos, y genera capturas de revisión en `dist-prueba/qa`.
 
 ### Web / PWA
 
@@ -106,4 +111,4 @@ Cuando cambies `index.html`, `app.js`, `data.js`, íconos o el manifiesto, subí
 
 ## Feriados
 
-La app incluye feriados nacionales de Argentina para 2026, sin puentes turísticos. Para otros años, cargalos desde el modo **Feriado** del tracker y verificá las fechas antes de liquidar.
+Los espacios nuevos empiezan sin feriados predefinidos. Configurá jornadas por día (0 indica no laborable), el inicio de semana y las fechas especiales de cualquier año/país. También podés marcarlas en el calendario. Los espacios existentes conservan su configuración anterior; verificá las fechas antes de liquidar.

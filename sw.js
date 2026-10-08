@@ -1,6 +1,6 @@
 /* Service worker de la Libreta de Horas: deja la app disponible sin internet.
    Si cambiás algún archivo de la lista, subí el número de VERSION para que los dispositivos lo actualicen. */
-const VERSION = 'v26';
+const VERSION = 'v27';
 const APP_CACHE = 'libreta-horas-app-' + VERSION;
 const FONT_CACHE = 'libreta-horas-fonts';
 const ASSETS = [
@@ -8,6 +8,9 @@ const ASSETS = [
   './index.html',
   './app.js',
   './desktop-updates.js',
+  './workspace.js',
+  './workspace-ui.js',
+  './workspace.css',
   './data.js',
   './pdf-report.js',
   './manifest.webmanifest',
