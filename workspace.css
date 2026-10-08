@@ -32,7 +32,27 @@ details summary { cursor: pointer; padding: 12px 0; color: var(--ink); font-size
 .workspace-profile .note, .recurrence-fields .note { line-height: 1.6; font-size: 13px; color: var(--muted); }
 .settings-layout > .workspace-profile { grid-column: 1 / -1; }
 .settings-layout .button-row { flex-wrap: wrap; }
-.kpi-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important; }
+.kpi-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)) !important; }
+/* Los importes se adaptan a su tarjeta, no al ancho de toda la ventana.
+   Se conservan todas las cifras: sin elipsis ni recortes de valores. */
+.kpi-grid .kpi-card { min-width: 0; container-type: inline-size; gap: 10px; }
+.kpi-grid .kpi-card strong { font-size: clamp(18px, 8cqi, 34px); line-height: 1.15; }
+.kpi-card strong, .income-card .card-amount, .income-card .card-heading p,
+.income-card .card-amount-secondary, .income-card .card-footer > span,
+.tracker-widget .tracker-numbers b, .tracker-widget .tracker-payment-copy,
+.calendar-panel .currency-value, .currency-value small, .directory-row b,
+.directory-item > p, .payment-panel .note {
+  min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+}
+.page .kpi-card, .page .tracker-widget, .page .payment-panel,
+.page .calendar-panel, .page .settings-card { min-width: 0; }
+.income-card .card-heading, .income-card .card-footer,
+.income-card .card-topline, .tracker-widget .tracker-footer,
+.calendar-panel .calendar-total { flex-wrap: wrap; }
+.income-card .card-heading > div:first-child { flex: 1 1 150px; min-width: 0; }
+.income-card .card-amount-wrap { min-width: 0; max-width: 100%; margin-left: auto; }
+.tracker-widget .tracker-numbers { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+.tracker-numbers > div, .directory-row > div, .calendar-total > span { min-width: 0; max-width: 100%; }
 .source-details { border-top: 1px solid var(--line); }
 #status:not(.visually-hidden) { font-size: 12px; }
 .app-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 12px; background: var(--ink); color: var(--surface); box-shadow: 0 8px 25px #0003; font-size: 13px; pointer-events: none; }

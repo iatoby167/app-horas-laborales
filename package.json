@@ -11,7 +11,7 @@
     "test": "node --test tests/*.test.mjs",
     "test:ui": "electron tests/subscriptions-ui.cjs",
     "test:updates-ui": "electron tests/desktop-updates-ui.cjs",
-    "test:workspace-ui": "electron tests/workspace-ui.cjs",
+    "test:workspace-ui": "electron tests/workspace-ui.cjs && electron tests/amounts-ui.cjs",
     "start": "electron .",
     "dist": "electron-builder --win nsis --publish never",
     "dist:portable": "electron-builder --win portable --publish never",
