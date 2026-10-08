@@ -336,6 +336,22 @@ function normalizePayments(value) {
   return payments;
 }
 
+function normalizeStatuses(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value)
+    .filter(([period, status]) => parseMonthKey(period) && VALID_PROJECT_STATES.has(status)));
+}
+
+function subscriptionStartPeriod(source) {
+  if (parseMonthKey(source.startPeriod)) return source.startPeriod;
+  // En datos anteriores, conservamos también los meses cargados retroactivamente.
+  const created = new Date(source.createdAt);
+  const createdPeriod = Number.isNaN(created.getTime()) ? todayKey()
+    : monthKey(created.getFullYear(), created.getMonth() + 1);
+  return [createdPeriod, ...Object.keys(source.payments || {}), ...Object.keys(source.statuses || {})]
+    .filter(key => parseMonthKey(key)).sort()[0];
+}
+
 export function normalizeSource(value = {}) {
   const type = VALID_TYPES.has(value.type) ? value.type : 'saas';
   const amount = Number(value.amount);
@@ -348,6 +364,18 @@ export function normalizeSource(value = {}) {
   const billingCycle = type === 'project'
     ? 'once'
     : (VALID_CYCLES.has(value.billingCycle) ? value.billingCycle : 'monthly');
+  const startPeriod = type === 'saas' ? subscriptionStartPeriod(value) : '';
+  const statuses = normalizeStatuses(value.statuses);
+  const payments = normalizePayments(value.payments);
+  const payment = normalizePayment(value.payment);
+  if (type === 'saas') {
+    // Migración: un estado global antiguo pertenece al mes de inicio, nunca
+    // se usa como respaldo de todos los meses futuros.
+    if (!value.statuses) statuses[startPeriod] = projectStatus;
+    if (!payments[startPeriod] && (payment.status !== 'pending' || payment.paidAmount || payment.expectedPaymentDate)) {
+      payments[startPeriod] = payment;
+    }
+  }
   return {
     id: safeId(value.id) || createId(),
     name: typeof value.name === 'string' ? value.name.trim().slice(0, 120) : '',
@@ -357,12 +385,14 @@ export function normalizeSource(value = {}) {
     billingCycle,
     clients: Number.isFinite(clients) && clients >= 0 ? Math.round(clients) : 0,
     estimatedHours: Number.isFinite(estimatedHours) && estimatedHours >= 0 ? estimatedHours : 0,
-    projectStatus,
+    projectStatus: type === 'saas' ? 'active' : projectStatus,
+    startPeriod,
+    statuses,
     expectedDate: isValidDate(value.expectedDate) ? value.expectedDate : '',
     url: typeof value.url === 'string' ? value.url.trim().slice(0, 300) : '',
     notes: typeof value.notes === 'string' ? value.notes.trim().slice(0, 1500) : '',
-    payment: normalizePayment(value.payment),
-    payments: normalizePayments(value.payments),
+    payment: type === 'saas' ? normalizePayment() : payment,
+    payments,
     createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString(),
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString()
   };
@@ -378,7 +408,20 @@ export function saveSources(sources) {
 }
 
 export function getPaymentForPeriod(source, period) {
-  return normalizePayment(source.payments?.[period] || source.payment);
+  return normalizePayment(source.payments?.[period] || (source.type === 'saas' ? undefined : source.payment));
+}
+
+export function getStatusForPeriod(source, period) {
+  return source.type === 'saas' ? (source.statuses?.[period] || 'active') : source.projectStatus;
+}
+
+export function setStatusForPeriod(source, period, status) {
+  if (!parseMonthKey(period) || !VALID_PROJECT_STATES.has(status)) return source;
+  return {
+    ...source,
+    ...(source.type === 'saas' ? { statuses: { ...source.statuses, [period]: status } } : { projectStatus: status }),
+    updatedAt: new Date().toISOString()
+  };
 }
 
 export function setPaymentForPeriod(source, period, payment) {
@@ -420,7 +463,7 @@ function projectPeriodDate(source) {
 }
 
 export function sourceIsVisibleInPeriod(source, period) {
-  if (source.type === 'saas') return true;
+  if (source.type === 'saas') return Boolean(parseMonthKey(period)) && period >= subscriptionStartPeriod(source);
   if (source.type === 'project') {
     const date = projectPeriodDate(source);
     return date ? monthKeyFromDate(date) === period : period === todayKey();
@@ -432,8 +475,9 @@ export function sourceIsVisibleInPeriod(source, period) {
 }
 
 export function sourceAmountForPeriod(source, period) {
-  if (!sourceIsVisibleInPeriod(source, period) || source.projectStatus === 'paused') return 0;
-  if (source.type === 'saas') return source.projectStatus === 'active' ? toMonthlyAmount(source) : 0;
+  const status = getStatusForPeriod(source, period);
+  if (!sourceIsVisibleInPeriod(source, period) || status === 'paused') return 0;
+  if (source.type === 'saas') return status === 'active' ? toMonthlyAmount(source) : 0;
   if (source.type === 'project') return source.amount;
   if (source.type === 'hours') {
     if (source.billingCycle === 'once' && source.expectedDate && monthKeyFromDate(source.expectedDate) !== period) return 0;
@@ -489,6 +533,8 @@ export function calculateHub(sources, period, trackerTotal, trackerPayment, usdR
   };
   const lines = [];
   for (const source of sources) {
+    if (!sourceIsVisibleInPeriod(source, period)) continue;
+    const status = getStatusForPeriod(source, period);
     const expected = sourceAmountForPeriod(source, period);
     const payment = getPaymentForPeriod(source, period);
     const collected = collectedAmount(expected, payment);
@@ -500,7 +546,7 @@ export function calculateHub(sources, period, trackerTotal, trackerPayment, usdR
     if (source.type === 'project') metrics.projects += amountForMetric;
     if (source.type === 'hours') metrics.hours += amountForMetric;
     if (source.type === 'fixed') metrics.fixed += amountForMetric;
-    if ((source.type === 'saas' || source.type === 'project') && source.projectStatus !== 'paused' && source.projectStatus !== 'delivered') metrics.active += 1;
+    if ((source.type === 'saas' || source.type === 'project') && status !== 'paused' && status !== 'delivered') metrics.active += 1;
     metrics.collected += collectedArs ?? 0;
     lines.push({
       source,
@@ -538,7 +584,7 @@ export function exportBackup(settings, loadedMonths, sources, trackerPayments, e
   for (const [key, value] of loadedMonths.entries()) months[key] = { days: { ...value.days } };
   return {
     app: 'libreta-de-horas-hub',
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     settings: {
       rate: settings.rate,

@@ -1,0 +1,41 @@
+name: Publicar versión de PRUEBA de Windows
+
+on:
+  push:
+    branches: [pruebas]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-prueba
+  cancel-in-progress: false
+
+jobs:
+  prueba:
+    if: github.ref == 'refs/heads/pruebas'
+    runs-on: windows-latest
+    env:
+      TEST_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run dist:prueba
+      - name: Verificar aislamiento del instalador de prueba
+        run: node scripts/verify-prueba.cjs
+      - name: Publicar Pre-release (no estable)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = node -p "require('./electron-builder.prueba.cjs').extraMetadata.version"
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo obtener la versión de prueba.' }
+          $tag = "v$version"
+          gh release create $tag "dist-prueba/Hub-de-Ingresos-Prueba-$version-instalador-x64.exe" "dist-prueba/Hub-de-Ingresos-Prueba-$version-instalador-x64.exe.blockmap" "dist-prueba/prueba.yml" --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "PRUEBA $version" --prerelease --latest=false --notes "Versión de prueba independiente. Se instala como Hub de Ingresos Prueba y usa datos separados. Para volver a la normal, abrí Hub de Ingresos."
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo publicar la versión de prueba.' }

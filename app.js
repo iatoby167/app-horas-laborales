@@ -17,6 +17,7 @@ import {
   exportBackup,
   getPaymentForPeriod,
   getRateForPeriod,
+  getStatusForPeriod,
   getTrackerPayment,
   isValidDate,
   listStorageKeys,
@@ -42,6 +43,7 @@ import {
   saveUiPreferences,
   setRateForPeriod,
   setPaymentForPeriod,
+  setStatusForPeriod,
   shiftMonth,
   sourceAmountForPeriod,
   sourceIsVisibleInPeriod,
@@ -51,6 +53,7 @@ import {
   ymd
 } from './data.js';
 import { buildMonthlyInvoicePdf } from './pdf-report.js';
+import { initDesktopUpdates, renderDesktopUpdateCard } from './desktop-updates.js';
 
 const $ = selector => document.querySelector(selector);
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
@@ -500,7 +503,7 @@ function renderSourceCard(source, compactCard = false, quickToggle = false) {
     <article class="income-card ${compactCard ? 'compact' : ''}" data-source-card="${escapeHtml(source.id)}">
       <div class="card-topline">
         <span class="badge-group">${typeBadge(source.type)}${currencyBadge(source.currency)}</span>
-        <div class="badge-group">${projectBadge(source.projectStatus, source, quickToggle)}${paymentBadge(payment, source, expected, quickToggle)}</div>
+        <div class="badge-group">${projectBadge(getStatusForPeriod(source, state.period), source, quickToggle)}${paymentBadge(payment, source, expected, quickToggle)}</div>
       </div>
       <div class="card-heading">
         <div>
@@ -537,7 +540,7 @@ function renderEmpty(title, description, action = 'Agregar fuente') {
 function sourcesFor(type, { relevantOnly = false } = {}) {
   return state.sources
     .filter(source => source.type === type)
-    .filter(source => !relevantOnly || sourceIsVisibleInPeriod(source, state.period))
+    .filter(source => !(relevantOnly || source.type === 'saas') || sourceIsVisibleInPeriod(source, state.period))
     .filter(meetsFilter);
 }
 
@@ -641,7 +644,7 @@ function renderCatalog(type) {
   const isSaas = type === 'saas';
   const title = isSaas ? 'Micro-SaaS & suscripciones' : 'Desarrollos puntuales';
   const description = isSaas
-    ? 'MRR, clientes y estado de cobro de cada producto recurrente.'
+    ? 'Suscripciones desde su mes de alta, con activación y cobros independientes para cada mes.'
     : 'Proyectos de pago único del mes elegido, con sus fechas de entrega y cobros esperados.';
   const sources = sourcesFor(type, { relevantOnly: !isSaas });
   return `
@@ -746,6 +749,7 @@ function renderSettings() {
       <div><p class="eyebrow">Configuración</p><h1>Ajustes & copias</h1><p class="lede">Personalizá las horas, revisá la cotización USD y guardá una copia de tus registros.</p></div>
     </section>
     <section class="settings-layout">
+      ${renderDesktopUpdateCard()}
       <form class="settings-card" id="hoursDefaultsForm">
         <p class="section-kicker">Tracker de horas</p>
         <h2>Horas que se cargan al tocar un día</h2>
@@ -860,6 +864,10 @@ function updateSourceFormUI() {
   $('#sourceHoursWrap').hidden = !isHours;
   $('#sourceDateLabel').textContent = isProject ? 'Fecha del desarrollo / cobro' : 'Fecha estimada de cobro';
   const isNewSource = !state.sources.some(source => source.id === fields.id.value);
+  $('#sourceStatusLabel').textContent = isSaas ? 'Estado en este mes' : 'Estado del proyecto';
+  const periodHint = $('#sourcePeriodHint');
+  periodHint.hidden = !isSaas;
+  periodHint.textContent = `${formatMonth()}: el estado y el cobro se guardan solo para este mes. Los demás datos son compartidos. ${isNewSource ? 'La suscripción aparecerá desde este mes; los siguientes empezarán activos y pendientes de cobro.' : ''}`;
   if (isProject && isNewSource && !fields.expectedDate.value) {
     fields.expectedDate.value = state.period === todayKey() ? todayString() : `${state.period}-01`;
   }
@@ -882,6 +890,7 @@ function openSourceModal(id = '', type = '') {
   const initial = source || normalizeSource({
     type: initialType,
     id: createId(),
+    startPeriod: state.period,
     expectedDate: initialType === 'project' ? projectDateForPeriod : '',
     projectStatus: (initialType === 'saas' || initialType === 'fixed') ? 'active' : 'development'
   });
@@ -894,7 +903,7 @@ function openSourceModal(id = '', type = '') {
   fields.billingCycle.value = initial.billingCycle;
   fields.clients.value = initial.clients || '';
   fields.estimatedHours.value = initial.estimatedHours || '';
-  fields.projectStatus.value = initial.projectStatus;
+  fields.projectStatus.value = getStatusForPeriod(initial, state.period);
   fields.expectedDate.value = initial.expectedDate;
   fields.url.value = initial.url;
   fields.notes.value = initial.notes;
@@ -919,10 +928,12 @@ function removeSource(id) {
 
 function toggleSourceStatus(id) {
   const source = state.sources.find(item => item.id === id);
-  if (!source || !['saas', 'project'].includes(source.type) || !['development', 'active', 'paused'].includes(source.projectStatus)) return;
-  const nextStatus = source.projectStatus === 'active' ? 'paused' : 'active';
+  if (!source || !['saas', 'project'].includes(source.type)) return;
+  const status = getStatusForPeriod(source, state.period);
+  if (!['development', 'active', 'paused'].includes(status)) return;
+  const nextStatus = status === 'active' ? 'paused' : 'active';
   state.sources = state.sources.map(item => item.id === id
-    ? { ...item, projectStatus: nextStatus, updatedAt: new Date().toISOString() }
+    ? setStatusForPeriod(item, state.period, nextStatus)
     : item);
   const saved = saveSources(state.sources);
   setStatus(saved ? `${sourceTitle(source)} ${nextStatus === 'active' ? 'activado' : 'pausado'}` : 'No se pudo guardar el cambio', saved ? 'saved' : 'error');
@@ -966,6 +977,7 @@ function onSourceSubmit(event) {
     id: fields.id.value || createId(),
     name: fields.name.value,
     type: fields.type.value,
+    startPeriod: previous?.type === 'saas' ? previous.startPeriod : state.period,
     amount,
     currency: fields.currency.value,
     billingCycle: fields.type.value === 'project' ? 'once' : fields.type.value === 'hours' ? 'monthly' : fields.billingCycle.value,
@@ -977,6 +989,7 @@ function onSourceSubmit(event) {
     notes: fields.notes.value,
     updatedAt: new Date().toISOString()
   });
+  source = setStatusForPeriod(source, state.period, fields.projectStatus.value);
   source = setPaymentForPeriod(source, state.period, { status: fields.paymentStatus.value, paidAmount });
   if (previous) state.sources = state.sources.map(item => item.id === source.id ? source : item);
   else state.sources = [...state.sources, source];
@@ -1191,7 +1204,7 @@ function buildMonthlySummaryReport() {
       return {
         name: sourceTitle(source),
         type: SOURCE_TYPES[source.type],
-        projectStatus: PROJECT_STATES[source.projectStatus],
+        projectStatus: PROJECT_STATES[getStatusForPeriod(source, state.period)],
         paymentStatus: PAYMENT_STATES[payment.status],
         currency: source.currency,
         expected: formatCurrency(line.expected, source.currency),
@@ -1411,5 +1424,6 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 // Se carga el mes actual sin modificar los registros anteriores guardados por la versión original.
 ensureMonth();
 render();
+initDesktopUpdates(() => setRoute('settings'));
 applySidebarState();
 if (exchangeRateIsStale()) refreshExchangeRate({ quiet: hasExchangeRate() });

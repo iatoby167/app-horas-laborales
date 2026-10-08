@@ -1,0 +1,49 @@
+name: Publicar versión ESTABLE de Windows (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_version:
+        description: 'Confirmar versión estable de package.json (ejemplo: 1.0.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verificar versión
+        shell: pwsh
+        env:
+          CONFIRM_VERSION: ${{ inputs.confirm_version }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$' -or $env:CONFIRM_VERSION -ne $version) {
+            throw 'Confirmá exactamente la versión estable de package.json.'
+          }
+      - run: npm ci
+      - run: npm test
+      - name: Crear instalador y metadatos
+        run: npm run dist
+      - name: Publicar Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          gh release create $tag "dist/Hub-de-Ingresos-$version-instalador-x64.exe" "dist/Hub-de-Ingresos-$version-instalador-x64.exe.blockmap" "dist/latest.yml" --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "Hub de Ingresos $version" --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo publicar. Verificá si esa versión ya existe.' }

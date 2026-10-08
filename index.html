@@ -769,6 +769,7 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
             <span class="brand-subtitle">Hub central de ingresos</span>
           </div>
         </div>
+        <button id="desktopUpdateButton" class="btn" type="button" hidden>Actualizar programa</button>
         <span class="status visually-hidden" id="status" role="status" data-state="idle">Se guarda en este dispositivo</span>
         </header>
 
@@ -847,7 +848,7 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
           <label id="sourceHoursWrap">Horas estimadas del período
             <input name="estimatedHours" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
           </label>
-          <label>Estado del proyecto
+          <label><span id="sourceStatusLabel">Estado del proyecto</span>
             <select name="projectStatus">
               <option value="development">En desarrollo</option>
               <option value="active">Activo</option>
@@ -875,6 +876,7 @@ dialog[open]::backdrop { animation: backdrop-in .26s ease both; }
             <textarea name="notes" maxlength="1500" placeholder="Alcance, próximo paso, detalle de cobro…"></textarea>
           </label>
           <p id="sourceCurrencyHint" class="field-note full" hidden></p>
+          <p id="sourcePeriodHint" class="field-note full" hidden></p>
         </div>
         <p id="sourceError" class="form-error" role="alert" hidden></p>
         <div class="dialog-actions">

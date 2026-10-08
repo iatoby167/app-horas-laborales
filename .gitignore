@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-portable/
+dist-prueba/
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.p12
+backups/
+coverage/
